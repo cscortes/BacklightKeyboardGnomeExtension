@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schemalist>
+  <schema id="org.gnome.shell.extensions.kbd-backlight-scheduler"
+          path="/org/gnome/shell/extensions/kbd-backlight-scheduler/">
+
+    <key name="mode" type="s">
+      <default>'scheduled'</default>
+      <summary>Backlight control mode</summary>
+      <description>One of: always-on, always-off, scheduled</description>
+    </key>
+
+    <key name="brightness" type="i">
+      <default>3</default>
+      <range min="0" max="3"/>
+      <summary>Brightness level for always-on mode (0-3)</summary>
+    </key>
+
+    <key name="schedules" type="s">
+      <default>'[]'</default>
+      <summary>JSON array of schedule entries</summary>
+      <description>Array of {start_h, start_m, end_h, end_m, brightness} objects serialized as JSON</description>
+    </key>
+
+    <key name="max-brightness" type="i">
+      <default>3</default>
+      <range min="1" max="255"/>
+      <summary>Maximum brightness level read from hardware</summary>
+    </key>
+
+  </schema>
+</schemalist>
