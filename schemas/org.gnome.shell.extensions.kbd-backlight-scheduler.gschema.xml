@@ -27,9 +27,14 @@
       <summary>Maximum brightness level read from hardware</summary>
     </key>
 
+    <key name="asus-kbd-detected" type="b">
+      <default>false</default>
+      <summary>Whether ASUS WMI keyboard LED (asus::kbd_backlight) was detected</summary>
+    </key>
+
     <key name="aura-available" type="b">
       <default>false</default>
-      <summary>Whether ASUS Aura RGB (asusctl) was detected at extension startup</summary>
+      <summary>Whether Aura RGB control (asusctl) is available — separate from white backlight levels</summary>
     </key>
 
   </schema>

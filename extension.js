@@ -8,6 +8,16 @@ import GObject from 'gi://GObject';
 import St from 'gi://St';
 import Clutter from 'gi://Clutter';
 
+import {
+    detectAsusKbdLed,
+    detectAsusNbWmi,
+    detectAuraAvailable,
+    detectAuraDaemon,
+    detectAsusctlBinary,
+    detectAsusctlColourFlag,
+    describeHardware,
+} from './hwDetect.js';
+
 // ── GSD keyboard brightness D-Bus helpers ──────────────────────────────────
 // Uses the same service GNOME's own brightness slider calls.
 // Direct session-bus calls mirror exactly what the working gdbus commands do.
@@ -36,6 +46,39 @@ function gsdSetBrightness(percentage) {
         ]),
         null, Gio.DBusCallFlags.NONE, -1, null
     );
+}
+
+/** Convert discrete level (0‥max) to GSD percentage. Safe when max is 0 (Steps=1). */
+function levelToPct(level, maxBrightness) {
+    if (maxBrightness <= 0)
+        return level > 0 ? 100 : 0;
+    return Math.round((level / maxBrightness) * 100);
+}
+
+/** Convert GSD percentage to nearest discrete level. */
+function pctToLevel(pct, maxBrightness) {
+    if (maxBrightness <= 0)
+        return 0;
+    let best = 0, bestDiff = Infinity;
+    for (let level = 0; level <= maxBrightness; level++) {
+        const diff = Math.abs(pct - levelToPct(level, maxBrightness));
+        if (diff < bestDiff) {
+            bestDiff = diff;
+            best = level;
+        }
+    }
+    return best;
+}
+
+function parseSchedules(json) {
+    try {
+        const parsed = JSON.parse(json);
+        if (!Array.isArray(parsed))
+            return {schedules: [], error: 'schedules must be a JSON array'};
+        return {schedules: parsed, error: null};
+    } catch (e) {
+        return {schedules: [], error: e.message};
+    }
 }
 
 // ── Schedule logic ─────────────────────────────────────────────────────────
@@ -101,22 +144,6 @@ function dotBar(level, max) {
     return '●'.repeat(level) + '○'.repeat(Math.max(0, max - level));
 }
 
-// ── Aura (asusctl) detection ───────────────────────────────────────────────
-
-function detectAura() {
-    try {
-        const result = Gio.DBus.system.call_sync(
-            'org.freedesktop.DBus', '/',
-            'org.freedesktop.DBus', 'ListNames',
-            null, null, Gio.DBusCallFlags.NONE, -1, null
-        );
-        const names = result.get_child_value(0).recursiveUnpack();
-        return Array.isArray(names) && names.includes('org.asuslinux.Daemon');
-    } catch (_) {
-        return false;
-    }
-}
-
 // ── Panel indicator ────────────────────────────────────────────────────────
 
 const KbdIndicator = GObject.registerClass(
@@ -146,6 +173,10 @@ class KbdIndicator extends PanelMenu.Button {
         this._nextItem.label.add_style_class_name('dim-label');
         this.menu.addMenuItem(this._nextItem);
 
+        this._hwItem = new PopupMenu.PopupMenuItem('', {reactive: false});
+        this._hwItem.label.add_style_class_name('dim-label');
+        this.menu.addMenuItem(this._hwItem);
+
         this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
 
         // ── Schedule windows ──────────────────────────────────────
@@ -160,7 +191,7 @@ class KbdIndicator extends PanelMenu.Button {
 
         // ── Test override ─────────────────────────────────────────
         const testLabel = new PopupMenu.PopupMenuItem(
-            'Test Override  (auto-restores at next schedule tick)', {reactive: false});
+            'Test Override  (click ↺ Resume to restore schedule)', {reactive: false});
         testLabel.label.add_style_class_name('dim-label');
         this.menu.addMenuItem(testLabel);
 
@@ -183,6 +214,7 @@ class KbdIndicator extends PanelMenu.Button {
             });
             const level = i;
             btn.connect('clicked', () => {
+                this._ext._testOverride = true;
                 this._ext._writeBrightness(level);
                 this._refresh();
             });
@@ -194,7 +226,8 @@ class KbdIndicator extends PanelMenu.Button {
 
         const resumeItem = new PopupMenu.PopupMenuItem('↺  Resume Schedule Now');
         resumeItem.connect('activate', () => {
-            this._ext._applyNow();
+            this._ext._testOverride = false;
+            this._ext._applyNow(true);
             this._refresh();
         });
         this.menu.addMenuItem(resumeItem);
@@ -222,8 +255,9 @@ class KbdIndicator extends PanelMenu.Button {
                 reactive: true,
             });
             btn.connect('clicked', () => {
+                this._ext._testOverride = false;
                 this._ext._settings.set_string('mode', id);
-                this._ext._applyNow();
+                this._ext._applyNow(true);
                 this._refresh();
             });
             this._modeBtns[id] = btn;
@@ -251,29 +285,43 @@ class KbdIndicator extends PanelMenu.Button {
         const modeLabel = {
             'always-on': 'Always On', 'always-off': 'Always Off', 'scheduled': 'Scheduled',
         }[mode] ?? mode;
+        const overrideTag = ext._testOverride ? '  [test]' : '';
+        const auraErr     = ext._auraError ? '  ⚠ Aura' : '';
         this._statusItem.label.text =
-            `Keyboard Backlight  |  ${modeLabel}  |  ${dotBar(current, maxB)}`;
+            `Keyboard Backlight  |  ${modeLabel}  |  ${dotBar(current, maxB)}${overrideTag}${auraErr}`;
 
         if (mode === 'scheduled') {
-            let schedules = [];
-            try { schedules = JSON.parse(ext._settings.get_string('schedules')); } catch (_) {}
+            const {schedules, error} = parseSchedules(ext._settings.get_string('schedules'));
             const nc = nextChange(schedules, now);
-            this._nextItem.label.text = nc
-                ? `Next change in ${fmtDelta(nc.minutes)}: ${nc.level > 0 ? `On (${dotBar(nc.level, maxB)})` : 'Off'}`
-                : schedules.length === 0
-                    ? 'No windows configured — open Settings to add some'
-                    : 'Schedule loops every 24 h';
+            this._nextItem.label.text = error
+                ? `⚠ Schedule data invalid — open Settings to fix`
+                : nc
+                    ? `Next change in ${fmtDelta(nc.minutes)}: ${nc.level > 0 ? `On (${dotBar(nc.level, maxB)})` : 'Off'}`
+                    : schedules.length === 0
+                        ? 'No windows configured — open Settings to add some'
+                        : 'Schedule loops every 24 h';
             this._nextItem.visible = true;
         } else {
             this._nextItem.visible = false;
         }
 
+        const hw = describeHardware({
+            gsdOk:         ext._gsdOk,
+            gsdSteps:      ext._gsdSteps,
+            maxBrightness: maxB,
+        });
+        this._hwItem.label.text = hw.kbdBackend;
+        this._hwItem.visible    = true;
+
         // Rebuild schedule list
         this._schedSection.removeAll();
-        let schedules = [];
-        try { schedules = JSON.parse(ext._settings.get_string('schedules')); } catch (_) {}
+        const {schedules, error: schedErr} = parseSchedules(ext._settings.get_string('schedules'));
 
-        if (schedules.length === 0) {
+        if (schedErr) {
+            const warn = new PopupMenu.PopupMenuItem('⚠  Schedule data is invalid', {reactive: false});
+            warn.label.style = 'color: rgba(255, 120, 80, 1);';
+            this._schedSection.addMenuItem(warn);
+        } else if (schedules.length === 0) {
             const empty = new PopupMenu.PopupMenuItem('(none — add windows in Settings)', {reactive: false});
             empty.label.add_style_class_name('dim-label');
             this._schedSection.addMenuItem(empty);
@@ -312,20 +360,28 @@ export default class KbdBacklightScheduler extends Extension {
             'org.gnome.shell.extensions.kbd-backlight-scheduler'
         );
 
-        this._auraAvailable = detectAura();
-        this._settings.set_boolean('aura-available', this._auraAvailable);
-        console.log(`[KbdBacklight] Aura (asusctl): ${this._auraAvailable}`);
+        this._testOverride  = false;
+        this._auraError     = null;
+        this._gsdOk         = false;
+        this._gsdSteps      = 0;
+        this._syncHardware();
+        this._syncAura();
+        this._auraColourFlag = this._auraAvailable ? detectAsusctlColourFlag() : '--colour';
 
         // Read Steps directly from GSD (Steps=4 → levels 0‥3, maxBrightness=3).
         // Falls back to the stored setting if GSD isn't reachable yet.
         try {
             const steps = gsdGet('Steps');
-            this._maxBrightness = steps - 1;
+            this._gsdSteps      = steps;
+            this._gsdOk         = true;
+            this._maxBrightness = Math.max(0, steps - 1);
             console.log(`[KbdBacklight] GSD Steps=${steps}, maxBrightness=${this._maxBrightness}`);
         } catch (e) {
             this._maxBrightness = this._settings.get_int('max-brightness');
+            this._gsdSteps      = this._maxBrightness + 1;
             console.error(`[KbdBacklight] Could not read Steps from GSD: ${e.message}`);
         }
+        this._settings.set_int('max-brightness', this._maxBrightness);
 
         this._currentBrightness = this._readBrightness();
 
@@ -355,11 +411,33 @@ export default class KbdBacklightScheduler extends Extension {
         this._settings  = null;
     }
 
+    _syncHardware() {
+        const asusLed = detectAsusKbdLed();
+        const asusWmi = detectAsusNbWmi();
+        const detected = asusLed || asusWmi;
+        this._settings.set_boolean('asus-kbd-detected', detected);
+        console.log(`[KbdBacklight] ASUS WMI LED (asus::kbd_backlight): ${asusLed}`);
+        console.log(`[KbdBacklight] ASUS platform (asus-nb-wmi): ${asusWmi}`);
+    }
+
+    _syncAura() {
+        const available = detectAuraAvailable();
+        const firstRun  = this._auraAvailable === undefined;
+        if (firstRun || available !== this._auraAvailable) {
+            this._auraAvailable = available;
+            this._settings.set_boolean('aura-available', available);
+            if (available)
+                this._auraColourFlag = detectAsusctlColourFlag();
+            console.log(`[KbdBacklight] Aura RGB: ${available} ` +
+                `(daemon=${detectAuraDaemon()}, asusctl=${detectAsusctlBinary()})`);
+        }
+    }
+
     /** Read current brightness from GSD (percentage → level) */
     _readBrightness() {
         try {
             const pct = gsdGet('Brightness');
-            return Math.round((pct / 100) * this._maxBrightness);
+            return pctToLevel(pct, this._maxBrightness);
         } catch (e) {
             console.error(`[KbdBacklight] read Brightness failed: ${e.message}`);
             return 0;
@@ -368,17 +446,25 @@ export default class KbdBacklightScheduler extends Extension {
 
     /** Write brightness via GSD Properties.Set (level → percentage) */
     _writeBrightness(level) {
+        const clamped = Math.min(Math.max(0, level), this._maxBrightness);
+        if (clamped === this._currentBrightness)
+            return;
         try {
-            const pct = Math.round((level / this._maxBrightness) * 100);
+            const pct = levelToPct(clamped, this._maxBrightness);
             gsdSetBrightness(pct);
-            this._currentBrightness = level;
-            console.log(`[KbdBacklight] Set level ${level} (${pct}%) via GSD`);
+            this._currentBrightness = clamped;
+            console.log(`[KbdBacklight] Set level ${clamped} (${pct}%) via GSD`);
         } catch (e) {
             console.error(`[KbdBacklight] SetBrightness failed: ${e.message}`);
         }
     }
 
-    _applyNow() {
+    _applyNow(force = false) {
+        if (this._testOverride && !force)
+            return;
+
+        this._syncAura();
+
         const mode = this._settings.get_string('mode');
         let target = 0;
 
@@ -387,8 +473,7 @@ export default class KbdBacklightScheduler extends Extension {
         } else if (mode === 'always-off') {
             target = 0;
         } else {
-            let schedules = [];
-            try { schedules = JSON.parse(this._settings.get_string('schedules')); } catch (_) {}
+            const {schedules} = parseSchedules(this._settings.get_string('schedules'));
             const now = nowMinutes();
             target = resolveSchedule(schedules, now);
             if (this._auraAvailable) {
@@ -400,25 +485,41 @@ export default class KbdBacklightScheduler extends Extension {
             }
         }
 
+        target = Math.min(Math.max(0, target), this._maxBrightness);
         this._writeBrightness(target);
         this._indicator?._refresh();
     }
 
-    // asusctl CLI syntax for 5.x: asusctl aura -m <mode> --colour <RRGGBB>
-    // Verify exact flags after installing asusctl; adjust modeArgs if needed.
     _auraApply(auraMode, hexColor) {
-        const hex = (hexColor ?? '#ffffff').replace('#', '');
+        const hex   = (hexColor ?? '#ffffff').replace('#', '');
+        const colour = this._auraColourFlag ?? '--colour';
         const modeArgs = {
-            Breathe: ['-m', 'breathe-single', '--colour', hex],
-            Strobe:  ['-m', 'strobe',         '--colour', hex],
+            Breathe: ['-m', 'breathe-single', colour, hex],
+            Strobe:  ['-m', 'strobe',         colour, hex],
             Rainbow: ['-m', 'rainbow-cycle'],
         };
-        const extra = modeArgs[auraMode] ?? ['-m', 'static', '--colour', hex];
+        const extra = modeArgs[auraMode] ?? ['-m', 'static', colour, hex];
         try {
-            Gio.Subprocess.new(['asusctl', 'aura', ...extra], Gio.SubprocessFlags.NONE);
+            const proc = Gio.Subprocess.new(
+                ['asusctl', 'aura', ...extra],
+                Gio.SubprocessFlags.STDERR_PIPE
+            );
+            proc.wait_async(null, (p, result) => {
+                try {
+                    p.wait_finish(result);
+                    this._auraError = null;
+                } catch (e) {
+                    const [, stderr] = p.communicate_utf8(null, null);
+                    this._auraError = (stderr?.trim() || e.message);
+                    console.error(`[KbdBacklight] asusctl failed: ${this._auraError}`);
+                }
+                this._indicator?._refresh();
+            });
             console.log(`[KbdBacklight] Aura ${auraMode} #${hex}`);
         } catch (e) {
+            this._auraError = e.message;
             console.error(`[KbdBacklight] asusctl failed: ${e.message}`);
+            this._indicator?._refresh();
         }
     }
 

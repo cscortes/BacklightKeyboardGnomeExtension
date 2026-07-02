@@ -4,6 +4,13 @@ import Gtk from 'gi://Gtk';
 import Gdk from 'gi://Gdk';
 import GObject from 'gi://GObject';
 
+import {
+    detectAsusKbdLed,
+    detectAsusNbWmi,
+    detectAuraAvailable,
+    describeHardware,
+} from './hwDetect.js';
+
 // ── Helpers ────────────────────────────────────────────────────────────────
 
 function pad(n) {
@@ -25,9 +32,13 @@ function rgbaToHex(rgba) {
 
 function loadSchedules(settings) {
     try {
-        return JSON.parse(settings.get_string('schedules')) ?? [];
-    } catch (_) {
-        return [];
+        const parsed = JSON.parse(settings.get_string('schedules'));
+        if (!Array.isArray(parsed))
+            return {schedules: [], error: 'schedules must be a JSON array'};
+        return {schedules: parsed, error: null};
+    } catch (e) {
+        console.warn(`[KbdBacklight] Invalid schedules JSON: ${e.message}`);
+        return {schedules: [], error: e.message};
     }
 }
 
@@ -89,14 +100,14 @@ const ScheduleRow = GObject.registerClass({
 
         // ── Brightness ────────────────────────────────────────
         const brightRow = new Adw.ActionRow({title: 'Brightness'});
-        this._brightSpin = Gtk.SpinButton.new_with_range(1, maxBrightness, 1);
+        this._brightSpin = Gtk.SpinButton.new_with_range(0, maxBrightness, 1);
         this._brightSpin.value          = entry.brightness;
         this._brightSpin.valign         = Gtk.Align.CENTER;
         this._brightSpin.width_request  = 80;
         this._brightSpin.connect('value-changed', () => this._onBrightChanged());
         brightRow.add_suffix(this._brightSpin);
         brightRow.add_suffix(new Gtk.Label({
-            label: `(max ${maxBrightness})`,
+            label: `(0 = off, max ${maxBrightness})`,
             css_classes: ['dim-label'],
             valign: Gtk.Align.CENTER,
         }));
@@ -126,7 +137,8 @@ const ScheduleRow = GObject.registerClass({
 
             const colorRow = new Adw.ActionRow({title: 'Color'});
             colorRow.add_suffix(colorBtn);
-            colorRow.visible = this._entry.aura_mode !== 'Rainbow';
+            this._colorRow = colorRow;
+            this._syncColorRowVisibility();
 
             const auraModeList = new Gtk.StringList();
             AURA_MODES.forEach(m => auraModeList.append(m));
@@ -138,7 +150,7 @@ const ScheduleRow = GObject.registerClass({
             auraModeDropdown.connect('notify::selected', () => {
                 const m = AURA_MODES[auraModeDropdown.selected];
                 this._entry.aura_mode = m;
-                colorRow.visible = m !== 'Rainbow';
+                this._syncColorRowVisibility();
                 this._updateTitle();
                 this.emit('changed');
             });
@@ -173,6 +185,11 @@ const ScheduleRow = GObject.registerClass({
         return spin;
     }
 
+    _syncColorRowVisibility() {
+        if (this._colorRow)
+            this._colorRow.visible = (this._entry.aura_mode ?? 'Static') !== 'Rainbow';
+    }
+
     _onTimeChanged() {
         this._entry.start_h = this._startH.value;
         this._entry.start_m = this._startM.value;
@@ -191,7 +208,8 @@ const ScheduleRow = GObject.registerClass({
     _updateTitle() {
         const {start_h, start_m, end_h, end_m, brightness, aura_mode, color} = this._entry;
         this.title = `${fmtTime(start_h, start_m)}  →  ${fmtTime(end_h, end_m)}`;
-        let sub = `Brightness ${brightness} / ${this._maxB}`;
+        const brightLabel = brightness === 0 ? 'Off' : `${brightness} / ${this._maxB}`;
+        let sub = `Brightness ${brightLabel}`;
         if (this._auraAvailable) {
             const m = aura_mode ?? 'Static';
             sub += `   ${m}`;
@@ -212,8 +230,19 @@ export default class KbdBacklightPreferences extends ExtensionPreferences {
         const settings = this.getSettings(
             'org.gnome.shell.extensions.kbd-backlight-scheduler'
         );
-        const maxB          = settings.get_int('max-brightness');
-        const auraAvailable = settings.get_boolean('aura-available');
+
+        // Re-detect hardware when Settings opens (may differ from last extension enable).
+        const asusKbd       = detectAsusKbdLed() || detectAsusNbWmi();
+        const auraAvailable = detectAuraAvailable();
+        settings.set_boolean('asus-kbd-detected', asusKbd);
+        settings.set_boolean('aura-available', auraAvailable);
+
+        const maxB = settings.get_int('max-brightness');
+        const hw   = describeHardware({
+            gsdOk:         maxB >= 0,
+            gsdSteps:      maxB + 1,
+            maxBrightness: maxB,
+        });
 
         window.set_default_size(640, 620);
 
@@ -297,10 +326,34 @@ export default class KbdBacklightPreferences extends ExtensionPreferences {
         aboutGroup.add(versionRow);
 
         const backendRow = new Adw.ActionRow({
-            title: 'Brightness backend',
-            subtitle: 'org.gnome.SettingsDaemon.Power.Keyboard (GSD D-Bus)',
+            title: 'Keyboard backlight',
+            subtitle: hw.kbdBackend,
         });
         aboutGroup.add(backendRow);
+
+        const asusRow = new Adw.ActionRow({
+            title: 'ASUS WMI hardware',
+            subtitle: asusKbd
+                ? 'Detected — asus::kbd_backlight (asus-nb-wmi)'
+                : 'Not detected via sysfs',
+        });
+        asusRow.add_suffix(new Gtk.Label({
+            label: asusKbd ? '✓' : '—',
+            css_classes: ['dim-label'],
+            valign: Gtk.Align.CENTER,
+        }));
+        aboutGroup.add(asusRow);
+
+        const auraRow = new Adw.ActionRow({
+            title: 'Aura RGB (optional)',
+            subtitle: hw.auraBackend,
+        });
+        auraRow.add_suffix(new Gtk.Label({
+            label: auraAvailable ? '✓' : '—',
+            css_classes: ['dim-label'],
+            valign: Gtk.Align.CENTER,
+        }));
+        aboutGroup.add(auraRow);
 
         // ══════════════════════════════════════════════════════
         //  Page 2 – Schedule
@@ -317,6 +370,16 @@ export default class KbdBacklightPreferences extends ExtensionPreferences {
                          'End < Start means the window crosses midnight.',
         });
         schedulePage.add(scheduleContent);
+
+        const {schedules: initialSchedules, error: scheduleError} = loadSchedules(settings);
+        if (scheduleError) {
+            const banner = new Adw.Banner({
+                title: 'Schedule data is invalid and could not be loaded. ' +
+                       'Re-add your time windows below.',
+                reveal: true,
+            });
+            schedulePage.add(banner);
+        }
 
         // "Add" button row at the bottom of the group
         const addRow = new Adw.ActionRow({title: 'Add a new time window'});
@@ -335,7 +398,7 @@ export default class KbdBacklightPreferences extends ExtensionPreferences {
 
         // Populate existing schedules
         this._scheduleRows = [];
-        for (const entry of loadSchedules(settings))
+        for (const entry of initialSchedules)
             this._addScheduleRow(entry, scheduleContent, addRow, settings, maxB, auraAvailable);
 
         // Set initial visibility
