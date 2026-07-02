@@ -1,6 +1,7 @@
 import {ExtensionPreferences} from 'resource:///org/gnome/Shell/Extensions/js/extensions/prefs.js';
 import Adw from 'gi://Adw';
 import Gtk from 'gi://Gtk';
+import Gdk from 'gi://Gdk';
 import GObject from 'gi://GObject';
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -13,6 +14,13 @@ function fmtTime(h, m) {
     const period = h < 12 ? 'AM' : 'PM';
     const h12    = h % 12 === 0 ? 12 : h % 12;
     return `${h12}:${pad(m)} ${period}`;
+}
+
+function rgbaToHex(rgba) {
+    const r = Math.round(rgba.red   * 255).toString(16).padStart(2, '0');
+    const g = Math.round(rgba.green * 255).toString(16).padStart(2, '0');
+    const b = Math.round(rgba.blue  * 255).toString(16).padStart(2, '0');
+    return `#${r}${g}${b}`;
 }
 
 function loadSchedules(settings) {
@@ -43,10 +51,11 @@ const ScheduleRow = GObject.registerClass({
         'deleted': {},
     },
 }, class ScheduleRow extends Adw.ExpanderRow {
-    _init(entry, maxBrightness) {
+    _init(entry, maxBrightness, auraAvailable = false) {
         super._init();
-        this._entry      = {...entry};
-        this._maxB       = maxBrightness;
+        this._entry         = {...entry};
+        this._maxB          = maxBrightness;
+        this._auraAvailable = auraAvailable;
 
         this._updateTitle();
 
@@ -93,6 +102,53 @@ const ScheduleRow = GObject.registerClass({
         }));
         this.add_row(brightRow);
 
+        // ── Aura effect (only when asusctl is available) ──────
+        if (auraAvailable) {
+            this._entry.aura_mode = entry.aura_mode ?? 'Static';
+            this._entry.color     = entry.color     ?? '#ffffff';
+
+            const AURA_MODES = ['Static', 'Breathe', 'Strobe', 'Rainbow'];
+
+            const colorDlg = new Gtk.ColorDialog({
+                title: 'Backlight Color', modal: true, with_alpha: false,
+            });
+            const colorBtn = new Gtk.ColorDialogButton({
+                dialog: colorDlg, valign: Gtk.Align.CENTER,
+            });
+            const initRgba = new Gdk.RGBA();
+            initRgba.parse(this._entry.color);
+            colorBtn.rgba = initRgba;
+            colorBtn.connect('notify::rgba', () => {
+                this._entry.color = rgbaToHex(colorBtn.rgba);
+                this._updateTitle();
+                this.emit('changed');
+            });
+
+            const colorRow = new Adw.ActionRow({title: 'Color'});
+            colorRow.add_suffix(colorBtn);
+            colorRow.visible = this._entry.aura_mode !== 'Rainbow';
+
+            const auraModeList = new Gtk.StringList();
+            AURA_MODES.forEach(m => auraModeList.append(m));
+            const auraModeDropdown = new Gtk.DropDown({
+                model:    auraModeList,
+                selected: Math.max(0, AURA_MODES.indexOf(this._entry.aura_mode)),
+                valign:   Gtk.Align.CENTER,
+            });
+            auraModeDropdown.connect('notify::selected', () => {
+                const m = AURA_MODES[auraModeDropdown.selected];
+                this._entry.aura_mode = m;
+                colorRow.visible = m !== 'Rainbow';
+                this._updateTitle();
+                this.emit('changed');
+            });
+
+            const auraModeRow = new Adw.ActionRow({title: 'Aura Effect'});
+            auraModeRow.add_suffix(auraModeDropdown);
+            this.add_row(auraModeRow);
+            this.add_row(colorRow);
+        }
+
         // ── Delete button ─────────────────────────────────────
         const delRow = new Adw.ActionRow();
         const delBtn = new Gtk.Button({
@@ -133,9 +189,15 @@ const ScheduleRow = GObject.registerClass({
     }
 
     _updateTitle() {
-        const {start_h, start_m, end_h, end_m, brightness} = this._entry;
-        this.title    = `${fmtTime(start_h, start_m)}  →  ${fmtTime(end_h, end_m)}`;
-        this.subtitle = `Brightness ${brightness} / ${this._maxB}`;
+        const {start_h, start_m, end_h, end_m, brightness, aura_mode, color} = this._entry;
+        this.title = `${fmtTime(start_h, start_m)}  →  ${fmtTime(end_h, end_m)}`;
+        let sub = `Brightness ${brightness} / ${this._maxB}`;
+        if (this._auraAvailable) {
+            const m = aura_mode ?? 'Static';
+            sub += `   ${m}`;
+            if (m !== 'Rainbow') sub += ` ${color ?? '#ffffff'}`;
+        }
+        this.subtitle = sub;
     }
 
     getEntry() {
@@ -150,7 +212,8 @@ export default class KbdBacklightPreferences extends ExtensionPreferences {
         const settings = this.getSettings(
             'org.gnome.shell.extensions.kbd-backlight-scheduler'
         );
-        const maxB = settings.get_int('max-brightness');
+        const maxB          = settings.get_int('max-brightness');
+        const auraAvailable = settings.get_boolean('aura-available');
 
         window.set_default_size(640, 620);
 
@@ -263,8 +326,8 @@ export default class KbdBacklightPreferences extends ExtensionPreferences {
             valign: Gtk.Align.CENTER,
         });
         addBtn.connect('clicked', () => {
-            const entry = {start_h: 18, start_m: 0, end_h: 23, end_m: 0, brightness: maxB};
-            this._addScheduleRow(entry, scheduleContent, addRow, settings, maxB);
+            const entry = {start_h: 18, start_m: 0, end_h: 23, end_m: 0, brightness: maxB, aura_mode: 'Static', color: '#ffffff'};
+            this._addScheduleRow(entry, scheduleContent, addRow, settings, maxB, auraAvailable);
             saveSchedules(settings, this._collectSchedules());
         });
         addRow.add_suffix(addBtn);
@@ -273,14 +336,14 @@ export default class KbdBacklightPreferences extends ExtensionPreferences {
         // Populate existing schedules
         this._scheduleRows = [];
         for (const entry of loadSchedules(settings))
-            this._addScheduleRow(entry, scheduleContent, addRow, settings, maxB);
+            this._addScheduleRow(entry, scheduleContent, addRow, settings, maxB, auraAvailable);
 
         // Set initial visibility
         this._updateVisibility(modeRow.selected, alwaysOnGroup);
     }
 
-    _addScheduleRow(entry, group, addRow, settings, maxB) {
-        const row = new ScheduleRow(entry, maxB);
+    _addScheduleRow(entry, group, addRow, settings, maxB, auraAvailable = false) {
+        const row = new ScheduleRow(entry, maxB, auraAvailable);
 
         row.connect('changed', () => {
             saveSchedules(settings, this._collectSchedules());

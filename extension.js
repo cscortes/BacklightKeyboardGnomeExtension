@@ -60,6 +60,17 @@ function resolveSchedule(schedules, now) {
         isWindowActive(s, now) && s.brightness > best ? s.brightness : best, 0);
 }
 
+function resolveAura(schedules, now) {
+    let best = null, bestB = -1;
+    for (const s of schedules) {
+        if (isWindowActive(s, now) && s.brightness > bestB) {
+            bestB = s.brightness;
+            best = s;
+        }
+    }
+    return best;
+}
+
 function nextChange(schedules, now) {
     if (!schedules.length) return null;
     const currentLevel = resolveSchedule(schedules, now);
@@ -88,6 +99,22 @@ function fmtDelta(minutes) {
 
 function dotBar(level, max) {
     return '●'.repeat(level) + '○'.repeat(Math.max(0, max - level));
+}
+
+// ── Aura (asusctl) detection ───────────────────────────────────────────────
+
+function detectAura() {
+    try {
+        const result = Gio.DBus.system.call_sync(
+            'org.freedesktop.DBus', '/',
+            'org.freedesktop.DBus', 'ListNames',
+            null, null, Gio.DBusCallFlags.NONE, -1, null
+        );
+        const names = result.get_child_value(0).recursiveUnpack();
+        return Array.isArray(names) && names.includes('org.asuslinux.Daemon');
+    } catch (_) {
+        return false;
+    }
 }
 
 // ── Panel indicator ────────────────────────────────────────────────────────
@@ -285,6 +312,10 @@ export default class KbdBacklightScheduler extends Extension {
             'org.gnome.shell.extensions.kbd-backlight-scheduler'
         );
 
+        this._auraAvailable = detectAura();
+        this._settings.set_boolean('aura-available', this._auraAvailable);
+        console.log(`[KbdBacklight] Aura (asusctl): ${this._auraAvailable}`);
+
         // Read Steps directly from GSD (Steps=4 → levels 0‥3, maxBrightness=3).
         // Falls back to the stored setting if GSD isn't reachable yet.
         try {
@@ -358,11 +389,37 @@ export default class KbdBacklightScheduler extends Extension {
         } else {
             let schedules = [];
             try { schedules = JSON.parse(this._settings.get_string('schedules')); } catch (_) {}
-            target = resolveSchedule(schedules, nowMinutes());
+            const now = nowMinutes();
+            target = resolveSchedule(schedules, now);
+            if (this._auraAvailable) {
+                const active = resolveAura(schedules, now);
+                this._auraApply(
+                    active?.aura_mode ?? 'Static',
+                    active ? (active.color ?? '#ffffff') : '#000000'
+                );
+            }
         }
 
         this._writeBrightness(target);
         this._indicator?._refresh();
+    }
+
+    // asusctl CLI syntax for 5.x: asusctl aura -m <mode> --colour <RRGGBB>
+    // Verify exact flags after installing asusctl; adjust modeArgs if needed.
+    _auraApply(auraMode, hexColor) {
+        const hex = (hexColor ?? '#ffffff').replace('#', '');
+        const modeArgs = {
+            Breathe: ['-m', 'breathe-single', '--colour', hex],
+            Strobe:  ['-m', 'strobe',         '--colour', hex],
+            Rainbow: ['-m', 'rainbow-cycle'],
+        };
+        const extra = modeArgs[auraMode] ?? ['-m', 'static', '--colour', hex];
+        try {
+            Gio.Subprocess.new(['asusctl', 'aura', ...extra], Gio.SubprocessFlags.NONE);
+            console.log(`[KbdBacklight] Aura ${auraMode} #${hex}`);
+        } catch (e) {
+            console.error(`[KbdBacklight] asusctl failed: ${e.message}`);
+        }
     }
 
 }

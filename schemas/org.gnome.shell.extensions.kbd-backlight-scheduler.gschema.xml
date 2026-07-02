@@ -27,5 +27,10 @@
       <summary>Maximum brightness level read from hardware</summary>
     </key>
 
+    <key name="aura-available" type="b">
+      <default>false</default>
+      <summary>Whether ASUS Aura RGB (asusctl) was detected at extension startup</summary>
+    </key>
+
   </schema>
 </schemalist>
