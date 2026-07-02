@@ -15,6 +15,8 @@ import {
     detectAuraDaemon,
     detectAsusctlBinary,
     detectAsusctlColourFlag,
+    detectAsusctlCliStyle,
+    buildAuraArgv,
     describeHardware,
 } from './hwDetect.js';
 
@@ -271,6 +273,11 @@ class KbdIndicator extends PanelMenu.Button {
         const settingsItem = new PopupMenu.PopupMenuItem('Open Settings…');
         settingsItem.connect('activate', () => this._ext.openPreferences());
         this.menu.addMenuItem(settingsItem);
+
+        const ver = this._ext.metadata['semantic-version'] ?? '?';
+        const versionItem = new PopupMenu.PopupMenuItem(`v${ver}`, {reactive: false});
+        versionItem.label.add_style_class_name('dim-label');
+        this.menu.addMenuItem(versionItem);
     }
 
     _refresh() {
@@ -360,12 +367,16 @@ export default class KbdBacklightScheduler extends Extension {
             'org.gnome.shell.extensions.kbd-backlight-scheduler'
         );
 
+        const ver = this.metadata['semantic-version'] ?? '?';
+        console.log(`[KbdBacklight] v${ver} enabled`);
+
         this._testOverride  = false;
         this._auraError     = null;
         this._gsdOk         = false;
         this._gsdSteps      = 0;
         this._syncHardware();
         this._syncAura();
+        this._asusctlStyle   = detectAsusctlCliStyle();
         this._auraColourFlag = this._auraAvailable ? detectAsusctlColourFlag() : '--colour';
 
         // Read Steps directly from GSD (Steps=4 → levels 0‥3, maxBrightness=3).
@@ -428,6 +439,7 @@ export default class KbdBacklightScheduler extends Extension {
             this._settings.set_boolean('aura-available', available);
             if (available)
                 this._auraColourFlag = detectAsusctlColourFlag();
+            this._asusctlStyle = detectAsusctlCliStyle();
             console.log(`[KbdBacklight] Aura RGB: ${available} ` +
                 `(daemon=${detectAuraDaemon()}, asusctl=${detectAsusctlBinary()})`);
         }
@@ -491,19 +503,12 @@ export default class KbdBacklightScheduler extends Extension {
     }
 
     _auraApply(auraMode, hexColor) {
-        const hex   = (hexColor ?? '#ffffff').replace('#', '');
-        const colour = this._auraColourFlag ?? '--colour';
-        const modeArgs = {
-            Breathe: ['-m', 'breathe-single', colour, hex],
-            Strobe:  ['-m', 'strobe',         colour, hex],
-            Rainbow: ['-m', 'rainbow-cycle'],
-        };
-        const extra = modeArgs[auraMode] ?? ['-m', 'static', colour, hex];
+        const hex  = (hexColor ?? '#ffffff').replace('#', '');
+        const argv = buildAuraArgv(
+            auraMode, hex, this._asusctlStyle ?? 'v6', this._auraColourFlag ?? '--colour'
+        );
         try {
-            const proc = Gio.Subprocess.new(
-                ['asusctl', 'aura', ...extra],
-                Gio.SubprocessFlags.STDERR_PIPE
-            );
+            const proc = Gio.Subprocess.new(argv, Gio.SubprocessFlags.STDERR_PIPE);
             proc.wait_async(null, (p, result) => {
                 try {
                     p.wait_finish(result);
@@ -515,7 +520,7 @@ export default class KbdBacklightScheduler extends Extension {
                 }
                 this._indicator?._refresh();
             });
-            console.log(`[KbdBacklight] Aura ${auraMode} #${hex}`);
+            console.log(`[KbdBacklight] Aura ${auraMode} #${hex} (${argv.join(' ')})`);
         } catch (e) {
             this._auraError = e.message;
             console.error(`[KbdBacklight] asusctl failed: ${e.message}`);

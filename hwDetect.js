@@ -90,6 +90,44 @@ export function detectAsusctlColourFlag() {
     return '--colour';
 }
 
+/** 'v6' = asusctl 6.x subcommands; 'legacy' = older `-m` flag style. */
+export function detectAsusctlCliStyle() {
+    if (!detectAsusctlBinary())
+        return 'legacy';
+    try {
+        const proc = Gio.Subprocess.new(
+            ['asusctl', 'aura', '--help'],
+            Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_MERGE
+        );
+        const [, stdout] = proc.communicate_utf8(null, null);
+        const help = stdout ?? '';
+        if (help.includes('effect            led mode') || help.includes('aura effect'))
+            return 'v6';
+    } catch (_) {}
+    return 'legacy';
+}
+
+/** Build full argv for an asusctl aura command. */
+export function buildAuraArgv(auraMode, hexColor, style, colourFlag = '--colour') {
+    const hex = (hexColor ?? '#ffffff').replace('#', '');
+    if (style === 'v6') {
+        const v6 = {
+            Static:  ['aura', 'effect', 'static', '-c', hex],
+            Breathe: ['aura', 'effect', 'breathe', '--colour', hex, '--colour2', '000000', '--speed', 'med'],
+            Strobe:  ['aura', 'effect', 'flash', '-c', hex],
+            Rainbow: ['aura', 'effect', 'rainbow-cycle', '--speed', 'med'],
+        };
+        return ['asusctl', ...(v6[auraMode] ?? v6.Static)];
+    }
+    const legacy = {
+        Static:  ['aura', '-m', 'static', colourFlag, hex],
+        Breathe: ['aura', '-m', 'breathe-single', colourFlag, hex],
+        Strobe:  ['aura', '-m', 'strobe', colourFlag, hex],
+        Rainbow: ['aura', '-m', 'rainbow-cycle'],
+    };
+    return ['asusctl', ...(legacy[auraMode] ?? legacy.Static)];
+}
+
 /**
  * Human-readable hardware status for Settings / panel UI.
  */

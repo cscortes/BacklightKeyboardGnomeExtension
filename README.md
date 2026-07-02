@@ -3,7 +3,7 @@
 A GNOME Shell extension that automatically controls keyboard backlight brightness on a time-of-day schedule.
 
 Tested on Fedora 44 with an ASUS laptop, GNOME Shell 50.2. Compatible with GNOME 45–50.
-Version: **0.2.0**
+Version: **0.2.1**
 
 ---
 
@@ -16,6 +16,7 @@ Version: **0.2.0**
 - **Overlapping windows** — the highest brightness among active windows wins
 - **Auto-applies** — checks every 60 seconds and immediately on any settings change
 - **No root, no udev, no SELinux workarounds** — uses the same GSD D-Bus interface as GNOME's own brightness slider
+- **Optional Aura RGB** — per-window color and effects when [asusctl is installed](docs/asus-color-control-fedora.md) (Fedora guide)
 
 ---
 
@@ -106,11 +107,44 @@ gnome-extensions enable kbd-backlight-scheduler@lcortes.gnome
 
 Or use **Extensions** / **Extension Manager** from the app grid.
 
+### Development: bump version before each install
+
+Increment `semantic-version` in `metadata.json` (and the integer `version` field) every
+time you change code, so you can confirm the reload picked up your build:
+
+```bash
+# 1. Edit metadata.json → e.g. "semantic-version": "0.2.2", "version": 3
+# 2. Install and reload
+./install.sh
+gnome-extensions disable kbd-backlight-scheduler@lcortes.gnome
+gnome-extensions enable kbd-backlight-scheduler@lcortes.gnome
+```
+
+Check the running version:
+- Panel menu footer shows `v0.2.x`
+- Settings → General → About
+- `journalctl /usr/bin/gnome-shell -b --output=cat | grep 'KbdBacklight] v'`
+- `gnome-extensions info kbd-backlight-scheduler@lcortes.gnome`
+
+### Optional: ASUS RGB color control (asusctl)
+
+White backlight **brightness scheduling works without asusctl**. To enable per-window
+**RGB colors and effects** (Static, Breathe, Strobe, Rainbow) in the Schedule settings,
+install asusctl on Fedora:
+
+**[→ ASUS Color Control on Fedora](docs/asus-color-control-fedora.md)**
+
 ---
 
 ## Testing the backlight
 
-Run the interactive test script to cycle through every brightness level and confirm each one physically changes the hardware:
+Run the hardware detection script to see what your machine exposes (sysfs, GSD, Aura):
+
+```bash
+python3 test-detect-hardware.py
+```
+
+Run the interactive brightness test to cycle through every brightness level and confirm each one physically changes the hardware:
 
 ```bash
 python3 test-backlight.py
@@ -180,8 +214,12 @@ GnomeExtension/
 ├── metadata.json        Extension identity, version, supported GNOME versions
 ├── extension.js         Panel indicator + scheduling engine
 ├── prefs.js             Settings UI (General + Schedule tabs)
+├── hwDetect.js          ASUS WMI / Aura hardware detection
 ├── install.sh           Schema compile + file install (no sudo needed)
-├── test-backlight.py    Interactive hardware test
+├── test-backlight.py    Interactive brightness hardware test
+├── test-detect-hardware.py  Sysfs / GSD / Aura detection report
+├── docs/
+│   └── asus-color-control-fedora.md  Install asusctl for RGB on Fedora
 └── schemas/
     └── org.gnome.shell.extensions.kbd-backlight-scheduler.gschema.xml
 ```
@@ -223,3 +261,8 @@ glib-compile-schemas \
 gnome-shell --version
 gnome-extensions info kbd-backlight-scheduler@lcortes.gnome
 ```
+
+**Aura RGB not detected / no color options in Settings**
+
+See **[docs/asus-color-control-fedora.md](docs/asus-color-control-fedora.md)** for Fedora
+asusctl installation. Brightness scheduling does not require Aura.

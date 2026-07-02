@@ -7,8 +7,10 @@ set -euo pipefail
 UUID="kbd-backlight-scheduler@lcortes.gnome"
 EXT_DIR="$HOME/.local/share/gnome-shell/extensions/$UUID"
 SCHEMA_SRC="$(dirname "$0")/schemas"
+SCRIPT_DIR="$(dirname "$0")"
+VERSION="$(grep -Po '(?<="semantic-version": ")[^"]+' "$SCRIPT_DIR/metadata.json")"
 
-echo "=== Keyboard Backlight Scheduler – installer ==="
+echo "=== Keyboard Backlight Scheduler – installer (v${VERSION}) ==="
 
 # ── 1. Compile GSettings schema ────────────────────────────────────────────
 echo "[1/2] Compiling GSettings schema…"
@@ -27,7 +29,11 @@ cp "$SCHEMA_SRC/gschemas.compiled" "$EXT_DIR/schemas/"
 echo "      OK"
 
 echo ""
-echo "=== Done! ==="
+echo "=== Done! (v${VERSION} installed) ==="
+echo ""
+echo "Verify version:"
+echo "  gnome-extensions info $UUID | grep -i version"
+echo "  # or open the panel menu — version shown at the bottom"
 echo ""
 echo "Next steps:"
 echo "  1. Reload GNOME Shell:"
