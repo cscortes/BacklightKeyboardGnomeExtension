@@ -15,6 +15,17 @@
       <summary>Brightness level for always-on mode (0-3)</summary>
     </key>
 
+    <key name="always-on-aura-mode" type="s">
+      <default>'Static'</default>
+      <summary>Aura effect for always-on mode</summary>
+      <description>One of: Static, Breathe, Strobe, Rainbow</description>
+    </key>
+
+    <key name="always-on-aura-color" type="s">
+      <default>'#ffffff'</default>
+      <summary>Aura colour for always-on mode (hex)</summary>
+    </key>
+
     <key name="schedules" type="s">
       <default>'[]'</default>
       <summary>JSON array of schedule entries</summary>

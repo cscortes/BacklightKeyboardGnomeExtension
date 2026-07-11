@@ -46,6 +46,92 @@ function saveSchedules(settings, schedules) {
     settings.set_string('schedules', JSON.stringify(schedules));
 }
 
+function entryToRanges(entry) {
+    const start = entry.start_h * 60 + entry.start_m;
+    const end   = entry.end_h   * 60 + entry.end_m;
+    if (start === end)
+        return [];
+    if (start < end)
+        return [[start, end]];
+    return [[start, 1440], [0, end]];
+}
+
+function rangesOverlap(a, b) {
+    return a[0] < b[1] && b[0] < a[1];
+}
+
+function windowsOverlap(a, b) {
+    const ra = entryToRanges(a);
+    const rb = entryToRanges(b);
+    return ra.some(r => rb.some(s => rangesOverlap(r, s)));
+}
+
+/** Returns {a, b} for the first overlapping pair, or null. */
+function findFirstOverlap(entries) {
+    for (let i = 0; i < entries.length; i++) {
+        for (let j = i + 1; j < entries.length; j++) {
+            if (windowsOverlap(entries[i], entries[j]))
+                return {a: entries[i], b: entries[j]};
+        }
+    }
+    return null;
+}
+
+function fmtWindowRange(entry) {
+    return `${fmtTime(entry.start_h, entry.start_m)} → ${fmtTime(entry.end_h, entry.end_m)}`;
+}
+
+function overlapWarningMessage(a, b) {
+    return `Time windows cannot overlap. ${fmtWindowRange(a)} conflicts with ` +
+           `${fmtWindowRange(b)}. Adjust the times and try again.`;
+}
+
+const AURA_MODES = ['Static', 'Breathe', 'Strobe', 'Rainbow'];
+
+/** Reusable Aura effect + colour picker rows for Settings UI. */
+function createAuraWidgets({getMode, setMode, getColor, setColor, onChanged}) {
+    const colorDlg = new Gtk.ColorDialog({
+        title: 'Backlight Color', modal: true, with_alpha: false,
+    });
+    const colorBtn = new Gtk.ColorDialogButton({
+        dialog: colorDlg, valign: Gtk.Align.CENTER,
+    });
+    const initRgba = new Gdk.RGBA();
+    initRgba.parse(getColor());
+    colorBtn.rgba = initRgba;
+    colorBtn.connect('notify::rgba', () => {
+        setColor(rgbaToHex(colorBtn.rgba));
+        onChanged?.();
+    });
+
+    const colorRow = new Adw.ActionRow({title: 'Color'});
+    colorRow.add_suffix(colorBtn);
+
+    const auraModeList = new Gtk.StringList();
+    AURA_MODES.forEach(m => auraModeList.append(m));
+    const auraModeDropdown = new Gtk.DropDown({
+        model:    auraModeList,
+        selected: Math.max(0, AURA_MODES.indexOf(getMode())),
+        valign:   Gtk.Align.CENTER,
+    });
+
+    const syncColorVisibility = () => {
+        colorRow.visible = getMode() !== 'Rainbow';
+    };
+
+    auraModeDropdown.connect('notify::selected', () => {
+        setMode(AURA_MODES[auraModeDropdown.selected]);
+        syncColorVisibility();
+        onChanged?.();
+    });
+
+    const auraModeRow = new Adw.ActionRow({title: 'Aura Effect'});
+    auraModeRow.add_suffix(auraModeDropdown);
+    syncColorVisibility();
+
+    return {auraModeRow, colorRow, syncColorVisibility};
+}
+
 // ── Schedule row widget ─────────────────────────────────────────────────────
 
 /**
@@ -118,45 +204,13 @@ const ScheduleRow = GObject.registerClass({
             this._entry.aura_mode = entry.aura_mode ?? 'Static';
             this._entry.color     = entry.color     ?? '#ffffff';
 
-            const AURA_MODES = ['Static', 'Breathe', 'Strobe', 'Rainbow'];
-
-            const colorDlg = new Gtk.ColorDialog({
-                title: 'Backlight Color', modal: true, with_alpha: false,
+            const {auraModeRow, colorRow} = createAuraWidgets({
+                getMode:  () => this._entry.aura_mode,
+                setMode:  m => { this._entry.aura_mode = m; this._updateTitle(); },
+                getColor: () => this._entry.color,
+                setColor: c => { this._entry.color = c; this._updateTitle(); },
+                onChanged: () => this.emit('changed'),
             });
-            const colorBtn = new Gtk.ColorDialogButton({
-                dialog: colorDlg, valign: Gtk.Align.CENTER,
-            });
-            const initRgba = new Gdk.RGBA();
-            initRgba.parse(this._entry.color);
-            colorBtn.rgba = initRgba;
-            colorBtn.connect('notify::rgba', () => {
-                this._entry.color = rgbaToHex(colorBtn.rgba);
-                this._updateTitle();
-                this.emit('changed');
-            });
-
-            const colorRow = new Adw.ActionRow({title: 'Color'});
-            colorRow.add_suffix(colorBtn);
-            this._colorRow = colorRow;
-            this._syncColorRowVisibility();
-
-            const auraModeList = new Gtk.StringList();
-            AURA_MODES.forEach(m => auraModeList.append(m));
-            const auraModeDropdown = new Gtk.DropDown({
-                model:    auraModeList,
-                selected: Math.max(0, AURA_MODES.indexOf(this._entry.aura_mode)),
-                valign:   Gtk.Align.CENTER,
-            });
-            auraModeDropdown.connect('notify::selected', () => {
-                const m = AURA_MODES[auraModeDropdown.selected];
-                this._entry.aura_mode = m;
-                this._syncColorRowVisibility();
-                this._updateTitle();
-                this.emit('changed');
-            });
-
-            const auraModeRow = new Adw.ActionRow({title: 'Aura Effect'});
-            auraModeRow.add_suffix(auraModeDropdown);
             this.add_row(auraModeRow);
             this.add_row(colorRow);
         }
@@ -183,11 +237,6 @@ const ScheduleRow = GObject.registerClass({
         spin.valign          = Gtk.Align.CENTER;
         spin.wrap            = true;
         return spin;
-    }
-
-    _syncColorRowVisibility() {
-        if (this._colorRow)
-            this._colorRow.visible = (this._entry.aura_mode ?? 'Static') !== 'Rainbow';
     }
 
     _onTimeChanged() {
@@ -276,10 +325,12 @@ export default class KbdBacklightPreferences extends ExtensionPreferences {
         });
         modeGroup.add(modeRow);
 
-        // ── Always-On brightness ──────────────────────────────
+        // ── Always-On brightness + Aura ─────────────────────
         const alwaysOnGroup = new Adw.PreferencesGroup({
-            title: 'Always-On Brightness',
-            description: 'Brightness level used in "Always On" mode',
+            title: 'Always On',
+            description: auraAvailable
+                ? 'Brightness and Aura RGB used in "Always On" mode'
+                : 'Brightness level used in "Always On" mode',
         });
         generalPage.add(alwaysOnGroup);
 
@@ -309,9 +360,77 @@ export default class KbdBacklightPreferences extends ExtensionPreferences {
         brightRow.add_suffix(brightScale);
         alwaysOnGroup.add(brightRow);
 
-        // ── About ─────────────────────────────────────────────
-        const aboutGroup = new Adw.PreferencesGroup({title: 'About'});
-        generalPage.add(aboutGroup);
+        if (auraAvailable) {
+            const {auraModeRow, colorRow} = createAuraWidgets({
+                getMode:  () => settings.get_string('always-on-aura-mode'),
+                setMode:  m => settings.set_string('always-on-aura-mode', m),
+                getColor: () => settings.get_string('always-on-aura-color'),
+                setColor: c => settings.set_string('always-on-aura-color', c),
+            });
+            alwaysOnGroup.add(auraModeRow);
+            alwaysOnGroup.add(colorRow);
+        }
+
+        // ══════════════════════════════════════════════════════
+        //  Page 2 – Schedule
+        // ══════════════════════════════════════════════════════
+        const schedulePage = new Adw.PreferencesPage({
+            title: 'Schedule',
+            icon_name: 'x-office-calendar-symbolic',
+        });
+        window.add(schedulePage);
+
+        const scheduleContent = new Adw.PreferencesGroup({
+            title: 'Time Windows',
+            description: 'Each period must not overlap another. ' +
+                         'End < Start means the window crosses midnight.',
+        });
+        schedulePage.add(scheduleContent);
+
+        const {schedules: initialSchedules, error: scheduleError} = loadSchedules(settings);
+
+        const overlapBanner = new Adw.Banner({title: '', revealed: false});
+        if (scheduleError) {
+            overlapBanner.title = 'Schedule data is invalid and could not be loaded. ' +
+                                  'Re-add your time windows below.';
+            overlapBanner.revealed = true;
+        }
+        schedulePage.set_banner(overlapBanner);
+        this._overlapBanner = overlapBanner;
+
+        // "Add" button row at the bottom of the group
+        const addRow = new Adw.ActionRow({title: 'Add a new time window'});
+        const addBtn = new Gtk.Button({
+            label: '+ Add Window',
+            css_classes: ['suggested-action'],
+            valign: Gtk.Align.CENTER,
+        });
+        addBtn.connect('clicked', () => {
+            const entry = {start_h: 18, start_m: 0, end_h: 23, end_m: 0, brightness: maxB, aura_mode: 'Static', color: '#ffffff'};
+            this._addScheduleRow(entry, scheduleContent, addRow, settings, maxB, auraAvailable);
+            this._validateAndSave(overlapBanner, settings);
+        });
+        addRow.add_suffix(addBtn);
+        scheduleContent.add(addRow);
+
+        // Populate existing schedules
+        this._scheduleRows = [];
+        for (const entry of initialSchedules)
+            this._addScheduleRow(entry, scheduleContent, addRow, settings, maxB, auraAvailable);
+
+        this._validateAndSave(overlapBanner, settings);
+
+        // ══════════════════════════════════════════════════════
+        //  Page 3 – About
+        // ══════════════════════════════════════════════════════
+        const aboutPage = new Adw.PreferencesPage({
+            title: 'About',
+            icon_name: 'help-about-symbolic',
+        });
+        window.add(aboutPage);
+
+        const aboutGroup = new Adw.PreferencesGroup({title: 'Extension'});
+        aboutPage.add(aboutGroup);
 
         const version = this.metadata['semantic-version'] ?? '—';
         const versionRow = new Adw.ActionRow({
@@ -355,52 +474,6 @@ export default class KbdBacklightPreferences extends ExtensionPreferences {
         }));
         aboutGroup.add(auraRow);
 
-        // ══════════════════════════════════════════════════════
-        //  Page 2 – Schedule
-        // ══════════════════════════════════════════════════════
-        const schedulePage = new Adw.PreferencesPage({
-            title: 'Schedule',
-            icon_name: 'x-office-calendar-symbolic',
-        });
-        window.add(schedulePage);
-
-        const scheduleContent = new Adw.PreferencesGroup({
-            title: 'Time Windows',
-            description: 'The backlight turns on at the brightest matching level. ' +
-                         'End < Start means the window crosses midnight.',
-        });
-        schedulePage.add(scheduleContent);
-
-        const {schedules: initialSchedules, error: scheduleError} = loadSchedules(settings);
-        if (scheduleError) {
-            const banner = new Adw.Banner({
-                title: 'Schedule data is invalid and could not be loaded. ' +
-                       'Re-add your time windows below.',
-                reveal: true,
-            });
-            schedulePage.add(banner);
-        }
-
-        // "Add" button row at the bottom of the group
-        const addRow = new Adw.ActionRow({title: 'Add a new time window'});
-        const addBtn = new Gtk.Button({
-            label: '+ Add Window',
-            css_classes: ['suggested-action'],
-            valign: Gtk.Align.CENTER,
-        });
-        addBtn.connect('clicked', () => {
-            const entry = {start_h: 18, start_m: 0, end_h: 23, end_m: 0, brightness: maxB, aura_mode: 'Static', color: '#ffffff'};
-            this._addScheduleRow(entry, scheduleContent, addRow, settings, maxB, auraAvailable);
-            saveSchedules(settings, this._collectSchedules());
-        });
-        addRow.add_suffix(addBtn);
-        scheduleContent.add(addRow);
-
-        // Populate existing schedules
-        this._scheduleRows = [];
-        for (const entry of initialSchedules)
-            this._addScheduleRow(entry, scheduleContent, addRow, settings, maxB, auraAvailable);
-
         // Set initial visibility
         this._updateVisibility(modeRow.selected, alwaysOnGroup);
     }
@@ -409,12 +482,12 @@ export default class KbdBacklightPreferences extends ExtensionPreferences {
         const row = new ScheduleRow(entry, maxB, auraAvailable);
 
         row.connect('changed', () => {
-            saveSchedules(settings, this._collectSchedules());
+            this._validateAndSave(this._overlapBanner, settings);
         });
         row.connect('deleted', () => {
             group.remove(row);
             this._scheduleRows = this._scheduleRows.filter(r => r !== row);
-            saveSchedules(settings, this._collectSchedules());
+            this._validateAndSave(this._overlapBanner, settings);
         });
 
         // Insert before the "Add" row by rebuilding order:
@@ -424,6 +497,19 @@ export default class KbdBacklightPreferences extends ExtensionPreferences {
         group.add(addRow);
 
         this._scheduleRows.push(row);
+    }
+
+    _validateAndSave(overlapBanner, settings) {
+        const schedules = this._collectSchedules();
+        const conflict = findFirstOverlap(schedules);
+        if (conflict) {
+            overlapBanner.title = overlapWarningMessage(conflict.a, conflict.b);
+            overlapBanner.revealed = true;
+            return false;
+        }
+        overlapBanner.revealed = false;
+        saveSchedules(settings, schedules);
+        return true;
     }
 
     _collectSchedules() {

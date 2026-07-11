@@ -3,20 +3,21 @@
 A GNOME Shell extension that automatically controls keyboard backlight brightness on a time-of-day schedule.
 
 Tested on Fedora 44 with an ASUS laptop, GNOME Shell 50.2. Compatible with GNOME 45–50.
-Version: **0.2.1**
+Version: **0.3.1**
 
 ---
 
 ## Features
 
-- **Panel indicator** — keyboard icon in the top bar that dims when backlight is off
 - **Three modes** — Always On, Always Off, or Scheduled
+- **Panel indicator** — keyboard icon in the top bar that dims when backlight is off
 - **Multiple time windows** — add as many slots as you need, each with its own brightness level
 - **Midnight-crossing windows** — e.g. `10:00 PM → 6:00 AM` (end < start wraps automatically)
-- **Overlapping windows** — the highest brightness among active windows wins
+- **Non-overlapping windows** — Settings warns and blocks overlapping time periods
 - **Auto-applies** — checks every 60 seconds and immediately on any settings change
 - **No root, no udev, no SELinux workarounds** — uses the same GSD D-Bus interface as GNOME's own brightness slider
 - **Optional Aura RGB** — per-window color and effects when [asusctl is installed](docs/asus-color-control-fedora.md) (Fedora guide)
+- **About tab** — version, keyboard backlight backend, and hardware detection in Settings
 
 ---
 
@@ -53,8 +54,7 @@ Open Settings…
 | Section | What it does |
 |---|---|
 | **Control Mode** | Always On / Scheduled / Always Off |
-| **Always-On Brightness** | Brightness level slider (visible in Always On mode only) |
-| **About** | Version and brightness backend |
+| **Always On** | Brightness slider; Aura effect + colour when asusctl is installed |
 
 ### Schedule tab
 
@@ -66,6 +66,12 @@ Each time window appears as a collapsible row:
 
 Expand to edit **Start time**, **End time**, **Brightness level**, or **Remove** the window.
 Use **+ Add Window** at the bottom to create a new entry.
+
+### About tab
+
+| Section | What it does |
+|---|---|
+| **Extension** | Version, keyboard backlight backend, ASUS WMI detection, Aura RGB status |
 
 ---
 
@@ -87,7 +93,8 @@ cd ~/Code/GnomeExtension
 ```
 
 The installer compiles the GSettings schema and copies all files to
-`~/.local/share/gnome-shell/extensions/kbd-backlight-scheduler@lcortes.gnome/`.
+`~/.local/share/gnome-shell/extensions/kbd-backlight-scheduler@cscortes.gnome/`
+(extension UUID is defined in `metadata.json`; install scripts read it from there).
 No sudo required.
 
 ### Reload GNOME Shell
@@ -102,29 +109,59 @@ echo $XDG_SESSION_TYPE   # check x11 or wayland
 ### Enable
 
 ```bash
-gnome-extensions enable kbd-backlight-scheduler@lcortes.gnome
+gnome-extensions enable kbd-backlight-scheduler@cscortes.gnome
 ```
 
 Or use **Extensions** / **Extension Manager** from the app grid.
 
-### Development: bump version before each install
+### Versioning
 
-Increment `semantic-version` in `metadata.json` (and the integer `version` field) every
-time you change code, so you can confirm the reload picked up your build:
+`metadata.json` defines **two** version fields. They are related but not interchangeable.
+
+| Field | Example | Purpose |
+|---|---|---|
+| `"version"` | `7` | **GNOME integer version** — required by GNOME Shell, Extension Manager, and `extensions.gnome.org`. Must increase on every installable build (1, 2, 3 …). |
+| `"semantic-version"` | `"0.3.1"` | **Human-readable semver** — shown in the panel menu, Settings → About, `install.sh` output, and this README. |
+
+GNOME only understands the integer. The semver string is a project convention for readable release labels.
+
+**Bump rules**
+
+| Change type | `semantic-version` | `"version"` |
+|---|---|---|
+| Bug fix | patch — e.g. `0.3.1` → `0.3.2` | increment by 1 |
+| New feature | minor — e.g. `0.3.1` → `0.4.0` | increment by 1 |
+| Every installable build | (as above) | **always** increment by 1 |
+
+**What to update when releasing**
+
+1. **`metadata.json`** — both `"version"` and `"semantic-version"` (source of truth)
+2. **`README.md`** — `Version:` line near the top (keep in sync for readers who don't open metadata)
+3. **`buglist.md`** — optional; note fix/feature version in entries when helpful
+
+Everything else reads from `metadata.json` at runtime or install time (`extension.js`, `prefs.js`, `install.sh`).
+
+**Install and confirm**
+
+Increment versions in `metadata.json`, then install and reload:
 
 ```bash
-# 1. Edit metadata.json → e.g. "semantic-version": "0.2.2", "version": 3
-# 2. Install and reload
+# e.g. "semantic-version": "0.3.1", "version": 7
 ./install.sh
-gnome-extensions disable kbd-backlight-scheduler@lcortes.gnome
-gnome-extensions enable kbd-backlight-scheduler@lcortes.gnome
+gnome-extensions disable kbd-backlight-scheduler@cscortes.gnome
+gnome-extensions enable kbd-backlight-scheduler@cscortes.gnome
 ```
 
-Check the running version:
-- Panel menu footer shows `v0.2.x`
-- Settings → General → About
-- `journalctl /usr/bin/gnome-shell -b --output=cat | grep 'KbdBacklight] v'`
-- `gnome-extensions info kbd-backlight-scheduler@lcortes.gnome`
+`install.sh` validates the on-disk files and warns if GNOME Shell is still running an older integer build (common on Wayland until you log out/in).
+
+**Where to check the running version**
+
+| Location | Shows |
+|---|---|
+| Settings → About | `semantic-version` (e.g. `v0.3.1`) |
+| Panel menu footer | `semantic-version` |
+| `gnome-extensions info …` | integer `version` (e.g. `7`) |
+| `install.sh` output | both, after validation |
 
 ### Optional: ASUS RGB color control (asusctl)
 
@@ -192,7 +229,7 @@ Every 60 seconds (and on any settings change), the extension:
 
 1. Reads the current time in minutes since midnight
 2. Checks every schedule entry: `start ≤ now < end` (or wraps midnight when `end < start`)
-3. Picks the highest brightness among all active entries (0 if none)
+3. Finds the single active entry for the current time (0 if none)
 4. Sends that value to GSD via D-Bus
 
 ### Brightness backend
@@ -211,9 +248,9 @@ percentage = round(level / (steps - 1) × 100)
 
 ```
 GnomeExtension/
-├── metadata.json        Extension identity, version, supported GNOME versions
+├── metadata.json        UUID, integer version (GNOME), semantic-version (display)
 ├── extension.js         Panel indicator + scheduling engine
-├── prefs.js             Settings UI (General + Schedule tabs)
+├── prefs.js             Settings UI (General, Schedule, and About tabs)
 ├── hwDetect.js          ASUS WMI / Aura hardware detection
 ├── install.sh           Schema compile + file install (no sudo needed)
 ├── test-backlight.py    Interactive brightness hardware test
@@ -230,6 +267,8 @@ GnomeExtension/
 |---|---|---|---|
 | `mode` | string | `scheduled` | `always-on`, `always-off`, or `scheduled` |
 | `brightness` | int | `3` | Level for Always On mode |
+| `always-on-aura-mode` | string | `Static` | Aura effect for Always On mode |
+| `always-on-aura-color` | string | `#ffffff` | Aura colour for Always On mode |
 | `schedules` | string | `[]` | JSON array of `{start_h, start_m, end_h, end_m, brightness}` |
 | `max-brightness` | int | `3` | Fallback if GSD Steps cannot be read at startup |
 
@@ -253,13 +292,13 @@ journalctl /usr/bin/gnome-shell -b --output=cat | grep KbdBacklight
 **Settings window won't open**
 ```bash
 glib-compile-schemas \
-  ~/.local/share/gnome-shell/extensions/kbd-backlight-scheduler@lcortes.gnome/schemas/
+  ~/.local/share/gnome-shell/extensions/kbd-backlight-scheduler@cscortes.gnome/schemas/
 ```
 
 **Extension doesn't load**
 ```bash
 gnome-shell --version
-gnome-extensions info kbd-backlight-scheduler@lcortes.gnome
+gnome-extensions info kbd-backlight-scheduler@cscortes.gnome
 ```
 
 **Aura RGB not detected / no color options in Settings**

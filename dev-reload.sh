@@ -1,4 +1,9 @@
+#!/usr/bin/env bash
 # bump metadata.json first, then:
-./install.sh
-gnome-extensions disable kbd-backlight-scheduler@lcortes.gnome
-gnome-extensions enable kbd-backlight-scheduler@lcortes.gnome
+set -euo pipefail
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+UUID="$(grep -Po '(?<="uuid": ")[^"]+' "$SCRIPT_DIR/metadata.json")"
+
+"$SCRIPT_DIR/install.sh"
+gnome-extensions disable "$UUID"
+gnome-extensions enable "$UUID"

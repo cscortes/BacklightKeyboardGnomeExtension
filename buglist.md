@@ -42,6 +42,16 @@ Severity tiers: **High** → **Midhigh** → **Medium** → **Midlow** → **Low
 - **Description:** The per-window brightness spin button is created with `Gtk.SpinButton.new_with_range(1, maxBrightness, 1)`, so users cannot assign brightness level `0` to a schedule window. The only way to get "off" during a scheduled period is to have no active window covering that time, not an explicit off level inside a window.
 - **Repro:** Open Schedule tab, expand a window, try to set brightness to Off / 0.
 
+### Extension UUID mismatch between metadata and install path (`@lcortes` vs `@cscortes`)
+- **Author:** Cursor Agent
+- **Date found:** 2026-07-11
+- **Status:** Fixed
+- **Date fixed:** 2026-07-11
+- **Fix:** `install.sh` and `dev-reload.sh` now read UUID from `metadata.json`; README/docs updated to `@cscortes.gnome`; legacy `@lcortes.gnome` install folder removed on install.
+- **Files:** `metadata.json`, `install.sh`, `dev-reload.sh`, `README.md`, `docs/asus-color-control-fedora.md`
+- **Description:** `metadata.json` declared `kbd-backlight-scheduler@cscortes.gnome`, but install scripts copied files to `kbd-backlight-scheduler@lcortes.gnome` and `gnome-extensions enable` used the `@lcortes` name. GNOME requires the install directory name to match the `uuid` in `metadata.json`; the mismatch caused “Extension does not exist” and a shell journal error refusing to load the extension.
+- **Repro:** Run `./install.sh`; run `gnome-extensions enable kbd-backlight-scheduler@lcortes.gnome` — extension not found. Check journal: `UUID from metadata.json does not match directory name`.
+
 ---
 
 ## Medium
@@ -163,3 +173,23 @@ Severity tiers: **High** → **Midhigh** → **Medium** → **Midlow** → **Low
 - **Files:** `hwDetect.js`, `extension.js`, `prefs.js`
 - **Description:** Extension only checked `org.asuslinux.Daemon` / asusctl for "ASUS" detection. Machines with ASUS WMI white backlight (via GSD) but without asusctl installed appeared undetected even though GSD + `asus::kbd_backlight` worked.
 - **Repro:** ASUS laptop without asusctl; open Settings — no indication ASUS hardware is present.
+
+### AdwBanner uses wrong property name (`reveal` vs `revealed`)
+- **Author:** Cursor Agent
+- **Date found:** 2026-07-11
+- **Status:** Fixed
+- **Date fixed:** 2026-07-11
+- **Fix:** Renamed `reveal` to `revealed` on all `Adw.Banner` instances (libadwaita API).
+- **File:** `prefs.js` — schedule error banner, overlap banner, `_validateAndSave()`
+- **Description:** Overlap-validation and invalid-schedule banners were created with `reveal: true/false`. libadwaita’s `AdwBanner` exposes `revealed`, not `reveal`. Opening Settings crashed with `Error: No property reveal on AdwBanner`.
+- **Repro:** Install v0.2.3+ with overlap banners; open extension Settings on GNOME Shell 50 / libadwaita 1.3+.
+
+### AdwBanner added with PreferencesPage.add() instead of set_banner()
+- **Author:** Cursor Agent
+- **Date found:** 2026-07-11
+- **Status:** Fixed
+- **Date fixed:** 2026-07-11
+- **Fix:** Use `schedulePage.set_banner()` for the single page banner; merge invalid-schedule and overlap messages into one `Adw.Banner`.
+- **File:** `prefs.js` — Schedule page
+- **Description:** Banners were passed to `Adw.PreferencesPage.add()`, which only accepts `AdwPreferencesGroup`. Opening Settings crashed with `TypeError: Object is of type Adw.Banner - cannot convert to AdwPreferencesGroup`.
+- **Repro:** Open extension Settings on GNOME Shell 50 / libadwaita 1.7+ with overlap-validation banners enabled.

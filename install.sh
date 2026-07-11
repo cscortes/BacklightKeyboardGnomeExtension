@@ -4,41 +4,97 @@
 
 set -euo pipefail
 
-UUID="kbd-backlight-scheduler@lcortes.gnome"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+SCHEMA_SRC="$SCRIPT_DIR/schemas"
+METADATA="$SCRIPT_DIR/metadata.json"
+UUID="$(grep -Po '(?<="uuid": ")[^"]+' "$METADATA")"
+VERSION="$(grep -Po '(?<="semantic-version": ")[^"]+' "$METADATA")"
 EXT_DIR="$HOME/.local/share/gnome-shell/extensions/$UUID"
-SCHEMA_SRC="$(dirname "$0")/schemas"
-SCRIPT_DIR="$(dirname "$0")"
-VERSION="$(grep -Po '(?<="semantic-version": ")[^"]+' "$SCRIPT_DIR/metadata.json")"
+# Pre-0.2.3 installs used @lcortes.gnome; folder name must match metadata.json uuid.
+LEGACY_DIR="$HOME/.local/share/gnome-shell/extensions/kbd-backlight-scheduler@lcortes.gnome"
 
 echo "=== Keyboard Backlight Scheduler – installer (v${VERSION}) ==="
 
+if [[ -d "$LEGACY_DIR" && "$LEGACY_DIR" != "$EXT_DIR" ]]; then
+    echo "Removing legacy install at $LEGACY_DIR (UUID is now $UUID)…"
+    rm -rf "$LEGACY_DIR"
+fi
+
 # ── 1. Compile GSettings schema ────────────────────────────────────────────
-echo "[1/2] Compiling GSettings schema…"
-glib-compile-schemas "$(dirname "$0")/schemas"
+echo "[1/3] Compiling GSettings schema…"
+glib-compile-schemas "$SCHEMA_SRC"
 echo "      OK"
 
 # ── 2. Install extension files ─────────────────────────────────────────────
-echo "[2/2] Installing extension to $EXT_DIR…"
+echo "[2/3] Installing extension to $EXT_DIR…"
 mkdir -p "$EXT_DIR/schemas"
-cp "$(dirname "$0")/metadata.json" "$EXT_DIR/"
-cp "$(dirname "$0")/extension.js"  "$EXT_DIR/"
-cp "$(dirname "$0")/prefs.js"      "$EXT_DIR/"
-cp "$(dirname "$0")/hwDetect.js"   "$EXT_DIR/"
+cp "$SCRIPT_DIR/metadata.json" "$EXT_DIR/"
+cp "$SCRIPT_DIR/extension.js"  "$EXT_DIR/"
+cp "$SCRIPT_DIR/prefs.js"      "$EXT_DIR/"
+cp "$SCRIPT_DIR/hwDetect.js"   "$EXT_DIR/"
 cp "$SCHEMA_SRC/"*.xml             "$EXT_DIR/schemas/"
 cp "$SCHEMA_SRC/gschemas.compiled" "$EXT_DIR/schemas/"
 echo "      OK"
 
+# ── 3. Validate install ────────────────────────────────────────────────────
+echo "[3/3] Validating install…"
+fail() { echo "      FAIL: $1" >&2; exit 1; }
+warn() { echo "      WARN: $1"; }
+
+[[ -d "$EXT_DIR" ]] || fail "Extension directory missing: $EXT_DIR"
+
+REQUIRED_FILES=(
+    metadata.json
+    extension.js
+    prefs.js
+    hwDetect.js
+    schemas/gschemas.compiled
+    schemas/org.gnome.shell.extensions.kbd-backlight-scheduler.gschema.xml
+)
+for f in "${REQUIRED_FILES[@]}"; do
+    [[ -s "$EXT_DIR/$f" ]] || fail "Missing or empty: $EXT_DIR/$f"
+done
+
+INSTALLED_UUID="$(grep -Po '(?<="uuid": ")[^"]+' "$EXT_DIR/metadata.json")"
+INSTALLED_VERSION="$(grep -Po '(?<="semantic-version": ")[^"]+' "$EXT_DIR/metadata.json")"
+INSTALLED_BUILD="$(grep -Po '(?<="version": )[0-9]+' "$EXT_DIR/metadata.json")"
+DIR_UUID="$(basename "$EXT_DIR")"
+
+[[ "$INSTALLED_UUID" == "$UUID" ]] \
+    || fail "metadata.json uuid ($INSTALLED_UUID) != source uuid ($UUID)"
+[[ "$DIR_UUID" == "$UUID" ]] \
+    || fail "Install folder ($DIR_UUID) != metadata.json uuid ($INSTALLED_UUID)"
+[[ "$INSTALLED_VERSION" == "$VERSION" ]] \
+    || fail "Installed version ($INSTALLED_VERSION) != expected ($VERSION)"
+
+if command -v gnome-extensions >/dev/null 2>&1; then
+    if gnome-extensions info "$UUID" >/dev/null 2>&1; then
+        INFO="$(gnome-extensions info "$UUID" 2>/dev/null)"
+        RUNNING_PATH="$(grep -Po '(?<=^  Path: ).*' <<< "$INFO")"
+        RUNNING_BUILD="$(grep -Po '(?<=^  Version: ).*' <<< "$INFO")"
+        [[ "$RUNNING_PATH" == "$EXT_DIR" ]] \
+            || fail "GNOME Shell path ($RUNNING_PATH) != install path ($EXT_DIR)"
+        if [[ "$RUNNING_BUILD" != "$INSTALLED_BUILD" ]]; then
+            warn "GNOME Shell reports build ${RUNNING_BUILD}; reload Shell to pick up v${VERSION} (build ${INSTALLED_BUILD})"
+        else
+            echo "      GNOME Shell sees v${VERSION} (build ${INSTALLED_BUILD})"
+        fi
+    else
+        warn "GNOME Shell has not loaded this extension yet — log out/in (Wayland) or Alt+F2 → r (X11), then:"
+        warn "  gnome-extensions enable $UUID"
+    fi
+else
+    warn "gnome-extensions not found; skipped runtime check"
+fi
+
+echo "      OK — v${VERSION} installed to $EXT_DIR"
+
 echo ""
-echo "=== Done! (v${VERSION} installed) ==="
+echo "=== Done! (v${VERSION} validated) ==="
 echo ""
-echo "Verify version:"
-echo "  gnome-extensions info $UUID | grep -i version"
-echo "  # or open the panel menu — version shown at the bottom"
-echo ""
-echo "Next steps:"
-echo "  1. Reload GNOME Shell:"
-echo "       X11:    Alt+F2 → type 'r' → Enter"
-echo "       Wayland: log out and back in"
-echo "  2. Enable the extension:"
-echo "       gnome-extensions enable $UUID"
-echo "  3. Open Settings in the panel menu to add schedule windows."
+if [[ "${XDG_SESSION_TYPE:-}" == "wayland" ]]; then
+    echo "Next: log out and back in, then run:"
+else
+    echo "Next: reload GNOME Shell (Alt+F2 → r), then run:"
+fi
+echo "  gnome-extensions enable $UUID"

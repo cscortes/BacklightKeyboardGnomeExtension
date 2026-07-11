@@ -100,27 +100,15 @@ function isWindowActive(s, now) {
         : now >= start || now < end;
 }
 
-function resolveSchedule(schedules, now) {
-    return schedules.reduce((best, s) =>
-        isWindowActive(s, now) && s.brightness > best ? s.brightness : best, 0);
-}
-
-function resolveAura(schedules, now) {
-    let best = null, bestB = -1;
-    for (const s of schedules) {
-        if (isWindowActive(s, now) && s.brightness > bestB) {
-            bestB = s.brightness;
-            best = s;
-        }
-    }
-    return best;
+function findActiveWindow(schedules, now) {
+    return schedules.find(s => isWindowActive(s, now)) ?? null;
 }
 
 function nextChange(schedules, now) {
     if (!schedules.length) return null;
-    const currentLevel = resolveSchedule(schedules, now);
+    const currentLevel = findActiveWindow(schedules, now)?.brightness ?? 0;
     for (let delta = 1; delta <= 1440; delta++) {
-        const level = resolveSchedule(schedules, (now + delta) % 1440);
+        const level = findActiveWindow(schedules, (now + delta) % 1440)?.brightness ?? 0;
         if (level !== currentLevel)
             return {minutes: delta, level};
     }
@@ -482,14 +470,22 @@ export default class KbdBacklightScheduler extends Extension {
 
         if (mode === 'always-on') {
             target = this._settings.get_int('brightness');
+            if (this._auraAvailable) {
+                this._auraApply(
+                    this._settings.get_string('always-on-aura-mode'),
+                    this._settings.get_string('always-on-aura-color')
+                );
+            }
         } else if (mode === 'always-off') {
             target = 0;
+            if (this._auraAvailable)
+                this._auraApply('Static', '#000000');
         } else {
             const {schedules} = parseSchedules(this._settings.get_string('schedules'));
             const now = nowMinutes();
-            target = resolveSchedule(schedules, now);
+            const active = findActiveWindow(schedules, now);
+            target = active?.brightness ?? 0;
             if (this._auraAvailable) {
-                const active = resolveAura(schedules, now);
                 this._auraApply(
                     active?.aura_mode ?? 'Static',
                     active ? (active.color ?? '#ffffff') : '#000000'
