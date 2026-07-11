@@ -92,7 +92,7 @@ function nowMinutes() {
 
 function toMin(h, m) { return h * 60 + m; }
 
-function isWindowActive(s, now) {
+function isPeriodActive(s, now) {
     const start = toMin(s.start_h, s.start_m);
     const end   = toMin(s.end_h,   s.end_m);
     return start <= end
@@ -100,15 +100,15 @@ function isWindowActive(s, now) {
         : now >= start || now < end;
 }
 
-function findActiveWindow(schedules, now) {
-    return schedules.find(s => isWindowActive(s, now)) ?? null;
+function findActivePeriod(schedules, now) {
+    return schedules.find(s => isPeriodActive(s, now)) ?? null;
 }
 
 function nextChange(schedules, now) {
     if (!schedules.length) return null;
-    const currentLevel = findActiveWindow(schedules, now)?.brightness ?? 0;
+    const currentLevel = findActivePeriod(schedules, now)?.brightness ?? 0;
     for (let delta = 1; delta <= 1440; delta++) {
-        const level = findActiveWindow(schedules, (now + delta) % 1440)?.brightness ?? 0;
+        const level = findActivePeriod(schedules, (now + delta) % 1440)?.brightness ?? 0;
         if (level !== currentLevel)
             return {minutes: delta, level};
     }
@@ -169,8 +169,8 @@ class KbdIndicator extends PanelMenu.Button {
 
         this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
 
-        // ── Schedule windows ──────────────────────────────────────
-        const schedHeading = new PopupMenu.PopupMenuItem('Schedule Windows', {reactive: false});
+        // ── Schedule periods ──────────────────────────────────────
+        const schedHeading = new PopupMenu.PopupMenuItem('Schedule Periods', {reactive: false});
         schedHeading.label.style = 'font-weight: bold;';
         this.menu.addMenuItem(schedHeading);
 
@@ -293,7 +293,7 @@ class KbdIndicator extends PanelMenu.Button {
                 : nc
                     ? `Next change in ${fmtDelta(nc.minutes)}: ${nc.level > 0 ? `On (${dotBar(nc.level, maxB)})` : 'Off'}`
                     : schedules.length === 0
-                        ? 'No windows configured — open Settings to add some'
+                        ? 'No periods configured — open Settings to add some'
                         : 'Schedule loops every 24 h';
             this._nextItem.visible = true;
         } else {
@@ -317,12 +317,12 @@ class KbdIndicator extends PanelMenu.Button {
             warn.label.style = 'color: rgba(255, 120, 80, 1);';
             this._schedSection.addMenuItem(warn);
         } else if (schedules.length === 0) {
-            const empty = new PopupMenu.PopupMenuItem('(none — add windows in Settings)', {reactive: false});
+            const empty = new PopupMenu.PopupMenuItem('(none — add periods in Settings)', {reactive: false});
             empty.label.add_style_class_name('dim-label');
             this._schedSection.addMenuItem(empty);
         } else {
             for (const s of schedules) {
-                const active = isWindowActive(s, now);
+                const active = isPeriodActive(s, now);
                 const item   = new PopupMenu.PopupMenuItem(
                     `${active ? '▶' : '   '}  ${fmtTime(s.start_h, s.start_m)} – ${fmtTime(s.end_h, s.end_m)}    ${dotBar(s.brightness, maxB)}`,
                     {reactive: false}
@@ -483,7 +483,7 @@ export default class KbdBacklightScheduler extends Extension {
         } else {
             const {schedules} = parseSchedules(this._settings.get_string('schedules'));
             const now = nowMinutes();
-            const active = findActiveWindow(schedules, now);
+            const active = findActivePeriod(schedules, now);
             target = active?.brightness ?? 0;
             if (this._auraAvailable) {
                 this._auraApply(

@@ -10,12 +10,12 @@ This guide explains how to install **Aura RGB keyboard color control** on Fedora
 | Feature | Requires asusctl? | How this extension handles it |
 |---------|-------------------|-------------------------------|
 | White backlight brightness (off / dim / full) | **No** | GSD D-Bus — works out of the box on most ASUS laptops |
-| Per-window **RGB color** (Static, Breathe, Strobe, Rainbow) | **Yes** | Schedule tab → Aura Effect + Color picker |
+| Per-period **RGB color** (Static, Breathe, Strobe, Rainbow) | **Yes** | Schedule tab → Aura Effect + Color picker |
 
 If you only want scheduled **brightness levels**, you do **not** need asusctl. Run
 `python3 test-detect-hardware.py` to confirm GSD and `asus::kbd_backlight` are working.
 
-Install asusctl when you want **colored** keyboard lighting tied to schedule windows.
+Install asusctl when you want **colored** keyboard lighting tied to schedule periods.
 
 ---
 
@@ -174,7 +174,7 @@ gnome-extensions disable kbd-backlight-scheduler@cscortes.gnome
 gnome-extensions enable kbd-backlight-scheduler@cscortes.gnome
 ```
 
-Open **Settings → Schedule** in the extension panel menu. Each time window should now
+Open **Settings → Schedule** in the extension panel menu. Each time period should now
 show **Aura Effect** and **Color** rows when Aura is detected.
 
 If Aura options do not appear, log out and back in (Wayland), then reopen Settings.
@@ -203,7 +203,7 @@ asusctl aura -m breathe-single --colour ff0000
 asusctl aura -m rainbow-cycle
 ```
 
-Per-window settings are stored in the `schedules` GSettings JSON
+Per-period settings are stored in the `schedules` GSettings JSON
 (`aura_mode`, `color` fields). White brightness levels are still controlled via GSD
 independently of Aura.
 

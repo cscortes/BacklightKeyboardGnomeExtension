@@ -56,6 +56,16 @@ Severity tiers: **High** → **Midhigh** → **Medium** → **Midlow** → **Low
 
 ## Medium
 
+### Remove time window does not always persist
+- **Author:** Cursor Agent
+- **Date found:** 2026-07-11
+- **Status:** Fixed
+- **Date fixed:** 2026-07-11
+- **Fix:** Delete and “Cancel new window” now call `_validateAndSave()` with `alwaysSave: true` so removals are written even when remaining windows overlap or stored JSON was invalid; save decision extracted to `planScheduleSave()` in `scheduleLogic.js` with regression tests in `tools/schedule-logic-test.js`.
+- **Files:** `prefs.js`, `scheduleLogic.js`, `tools/schedule-logic-test.js`
+- **Description:** Removing a schedule row updated the UI but `_validateAndSave()` refused to write GSettings when other windows still overlapped or when `_scheduleJsonError` was set after a bad load. The row disappeared until Settings was reopened, then reappeared from stale stored data.
+- **Repro:** Create three windows where two overlap; delete the non-overlapping one — row vanishes but returns after closing and reopening Settings. Or corrupt the `schedules` key, open Settings, delete rows — changes never persist.
+
 ### Aura detection only runs once at extension enable
 - **Author:** Cursor Agent
 - **Date found:** 2026-07-01
@@ -122,7 +132,41 @@ Severity tiers: **High** → **Midhigh** → **Medium** → **Midlow** → **Low
 
 ---
 
+## Midhigh
+
+### "Add Window" crashed and left an unpersisted ghost draft when its default time overlapped an existing period
+- **Author:** Cursor Agent
+- **Date found:** 2026-07-11
+- **Status:** Fixed
+- **Date fixed:** 2026-07-11
+- **Fix:** Redesigned period creation so it can never hit the overlap-dialog crash path: `nextDefaultEntry()` (new, in `scheduleLogic.js`) auto-places a new period in the largest free gap of the day via `findFreeSlot()`, so the default can only conflict with existing periods if the entire 24h is already covered — in which case Add now shows a plain "No free time available" info dialog and creates no row at all, instead of a partially-wired draft. Also fixed `_addScheduleRow()` not returning the created row (the underlying cause of the crash: `const row = this._addScheduleRow(...); row.updateRevertVisibility();` threw `TypeError` on `undefined` because of the missing `return row;`, aborting before `_validateAndSave()` ran). Zero configured periods is explicitly documented as a valid, fully-supported state (backlight stays off).
+- **Files:** `scheduleLogic.js` (`findFreeSlot`, `nextDefaultEntry`), `prefs.js` (`_showNoRoomDialog` replaces `_showAddOverlapDialog`, `_addScheduleRow` now returns the row), `tools/schedule-logic-test.js` (regression tests for free-slot placement and the fully-packed case)
+- **Description:** The old default new-period time was hard-coded to 6 PM–11 PM. If that overlapped an existing period, an overlap dialog appeared; choosing "Edit times" ran a callback that called `.updateRevertVisibility()` on the return value of `_addScheduleRow()`, which was always `undefined` (missing `return` statement). The `TypeError` aborted the callback *after* the row had already been added to the widget tree and pushed into `_scheduleRows`, but *before* `_validateAndSave()` ran — producing a visible row that was never persisted to GSettings and behaved inconsistently (appeared like an un-deletable "ghost" entry on subsequent edits).
+- **Repro (old behavior):** Create one period covering 6 PM–11 PM (or anything overlapping it). Click "+ Add Window". Click "Edit times" in the overlap dialog. A second draft row appears; check `journalctl` for `TypeError: undefined has no properties` — the row was added without going through the normal save flow.
+- **Update (2026-07-11):** The free-slot auto-placement (`findFreeSlot()`/`_showNoRoomDialog`) was removed again — it fixed the crash, but silently placing the new period in whatever gap was largest (sometimes far from where the user clicked, e.g. an overnight wrap) was confusing. `nextDefaultEntry()` now always returns the same fixed 6 PM–11 PM default regardless of existing periods; if that happens to overlap something, the existing overlap banner flags it for the user to resolve by editing times, same as any manual edit. The crash fix itself (`_addScheduleRow()` returning the row) stays in place. `findFreeSlot()` and `_showNoRoomDialog()` were deleted as dead code.
+- **Update 2 (2026-07-11):** Fixed default always being 6 PM–11 PM (see above) still collided constantly: adding a *second* period always overlapped a first period placed anywhere near evening. `nextDefaultEntry()` now takes the existing periods back and continues for one hour from wherever the *last* period in the list ends (first period ever still gets the fixed 6 PM–11 PM default, since there's nothing to continue from). Simple/predictable (no whole-day search), and avoids the near-guaranteed collision from a fully static default.
+
+### "+ Add Period" mistaken for an OK/confirm button while editing an existing period
+- **Author:** Cursor Agent
+- **Date found:** 2026-07-11
+- **Status:** Fixed
+- **Date fixed:** 2026-07-11
+- **Description:** Editing a period's Start/End/Brightness/Aura fields auto-saved to GSettings on every single keystroke, with no explicit confirmation step. The only affordance resembling "confirm/cancel" was a "Revert changes"/"Cancel new period" button that only appeared once a row was dirty — there was no visible "OK" counterpart. The global "+ Add Period" button sat directly below the row list, which made it easy to mistake for "the button that finishes what I was just editing," when it actually always creates a brand-new, separate period. Combined with the fixed 6 PM–11 PM default above, this reliably produced an unwanted second period that immediately overlapped the one the user had just finished typing.
+- **Fix:** Replaced live-apply-on-every-keystroke with an explicit per-row staged edit model. Each `ScheduleRow` now has a Cancel/OK confirm bar (labelled Cancel/Add for a brand-new unconfirmed period, Revert/Save for an edit to an already-saved one) that is the *only* way to persist or discard that row's changes — typing in the time/brightness/aura fields only updates a live in-memory preview (conflict banner + this row's own button state), never GSettings, until OK/Save is clicked. The global button was renamed **"+ New Period"** to read distinctly from the per-row OK/Save button, and is disabled while any period is still an unconfirmed new draft, so at most one unresolved "new period" can exist at a time. Also fixed a related pre-existing bug where the invalid-JSON banner was immediately cleared by the first (empty-schedule) validation pass, and where a freshly-added draft row's Cancel bar never appeared until the user made a first edit.
+- **Files:** `prefs.js` (`ScheduleRow` Cancel/OK bar + `isNewDraft()`/`getSavedEntry()`/`confirm()`; `KbdBacklightPreferences._updatePreview()`/`_persistConfirmed()`/`_onRowConfirmed()`/`_liveSchedules()`/`_confirmedSchedules()` replace the old single `_validateAndSave()`/`_collectSchedules()`)
+- **Repro (old behavior):** Delete all periods. Click "+ Add Period" (old label), edit the new row down to 6–7 PM without clicking anything else. Click "+ Add Period" again out of habit — a second row appears defaulting to 6 PM–11 PM (or, before the earlier fix, some auto-placed range), which immediately overlaps the 6–7 PM period and shows the overlap banner with no clear way to tell which button was supposed to "confirm" the first edit.
+
 ## Low
+
+### "Window" terminology confusing next to the actual GTK Preferences window
+- **Author:** Cursor Agent
+- **Date found:** 2026-07-11
+- **Status:** Fixed
+- **Date fixed:** 2026-07-11
+- **Fix:** Renamed the schedule-entry concept from "window" to "period" everywhere it referred to a scheduled time span: UI strings ("+ Add Period", "Time Periods", "Remove this time period", "Cancel new period", "Overlapping time period", panel menu "Schedule Periods"), and identifiers (`fmtWindowRange`→`fmtPeriodRange`, `windowsOverlap`→`periodsOverlap`, `isWindowActive`→`isPeriodActive`, `findActiveWindow`→`findActivePeriod`). Left genuine GTK/GNOME desktop-window references untouched (`Adw.PreferencesWindow`, `fillPreferencesWindow`, `window.add()`, "Settings window won't open").
+- **Files:** `prefs.js`, `extension.js`, `scheduleLogic.js`, `tools/schedule-logic-test.js`, `README.md`, `docs/asus-color-control-fedora.md`
+- **Description:** The Schedule tab's "+ Add Window" button and related strings/identifiers used "window" to mean a scheduled time span, while the same file also has a real GTK `Adw.PreferencesWindow` (`fillPreferencesWindow`, `window.add()`). The overloaded term made it easy to misread "Add Window" as opening a new dialog rather than adding a time period.
+- **Repro:** N/A — naming/clarity issue, not a functional bug.
 
 ### Version metadata inconsistent across project files
 - **Author:** Cursor Agent
@@ -193,3 +237,23 @@ Severity tiers: **High** → **Midhigh** → **Medium** → **Midlow** → **Low
 - **File:** `prefs.js` — Schedule page
 - **Description:** Banners were passed to `Adw.PreferencesPage.add()`, which only accepts `AdwPreferencesGroup`. Opening Settings crashed with `TypeError: Object is of type Adw.Banner - cannot convert to AdwPreferencesGroup`.
 - **Repro:** Open extension Settings on GNOME Shell 50 / libadwaita 1.7+ with overlap-validation banners enabled.
+
+### Overlap validation had no Fix/Cancel flow (banner-only UX)
+- **Author:** Cursor Agent
+- **Date found:** 2026-07-11
+- **Status:** Fixed
+- **Date fixed:** 2026-07-11
+- **Fix:** Add flow gated with `Adw.AlertDialog` (Edit times / Cancel); edit flow uses banner plus per-row Revert and conflict highlighting; rows track last-saved state.
+- **File:** `prefs.js` — Schedule page, `ScheduleRow`, `_validateAndSave()`
+- **Description:** Overlap detection only showed a passive banner and still added draft rows on “Add Window”, with no way to cancel an invalid new window or revert edited times. UI state could diverge from saved GSettings until the user manually fixed or reopened Settings.
+- **Repro:** Add a window whose default times overlap an existing one, or edit a row to overlap another — banner appears but no explicit Cancel/Revert; unsaved draft row remains in the list.
+
+### Duplicate `createAuraWidgets` call causes SyntaxError on Settings open
+- **Author:** Cursor Agent
+- **Date found:** 2026-07-11
+- **Status:** Fixed
+- **Date fixed:** 2026-07-11
+- **Fix:** Removed duplicate `const {auraModeRow, colorRow}` destructuring in `ScheduleRow`; kept single call with `syncToWidgets`.
+- **File:** `prefs.js` — `ScheduleRow._init()`
+- **Description:** Two consecutive `createAuraWidgets()` calls declared `auraModeRow` and `colorRow` twice in the same block, causing `SyntaxError: redeclaration of const auraModeRow` and preventing Settings from opening.
+- **Repro:** Open extension Settings after v0.3.2 overlap UX changes.

@@ -10,6 +10,13 @@ import {
     detectAuraAvailable,
     describeHardware,
 } from './hwDetect.js';
+import {
+    entriesEqual,
+    findFirstOverlap,
+    findOverlapWith,
+    nextDefaultEntry,
+    planScheduleSave,
+} from './scheduleLogic.js';
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -46,44 +53,13 @@ function saveSchedules(settings, schedules) {
     settings.set_string('schedules', JSON.stringify(schedules));
 }
 
-function entryToRanges(entry) {
-    const start = entry.start_h * 60 + entry.start_m;
-    const end   = entry.end_h   * 60 + entry.end_m;
-    if (start === end)
-        return [];
-    if (start < end)
-        return [[start, end]];
-    return [[start, 1440], [0, end]];
-}
-
-function rangesOverlap(a, b) {
-    return a[0] < b[1] && b[0] < a[1];
-}
-
-function windowsOverlap(a, b) {
-    const ra = entryToRanges(a);
-    const rb = entryToRanges(b);
-    return ra.some(r => rb.some(s => rangesOverlap(r, s)));
-}
-
-/** Returns {a, b} for the first overlapping pair, or null. */
-function findFirstOverlap(entries) {
-    for (let i = 0; i < entries.length; i++) {
-        for (let j = i + 1; j < entries.length; j++) {
-            if (windowsOverlap(entries[i], entries[j]))
-                return {a: entries[i], b: entries[j]};
-        }
-    }
-    return null;
-}
-
-function fmtWindowRange(entry) {
+function fmtPeriodRange(entry) {
     return `${fmtTime(entry.start_h, entry.start_m)} → ${fmtTime(entry.end_h, entry.end_m)}`;
 }
 
-function overlapWarningMessage(a, b) {
-    return `Time windows cannot overlap. ${fmtWindowRange(a)} conflicts with ` +
-           `${fmtWindowRange(b)}. Adjust the times and try again.`;
+function overlapEditBannerMessage(a, b) {
+    return `Time periods overlap: ${fmtPeriodRange(a)} and ${fmtPeriodRange(b)}. ` +
+           'Change the times to resolve it, or Cancel/Revert to discard the edit.';
 }
 
 const AURA_MODES = ['Static', 'Breathe', 'Strobe', 'Rainbow'];
@@ -129,30 +105,42 @@ function createAuraWidgets({getMode, setMode, getColor, setColor, onChanged}) {
     auraModeRow.add_suffix(auraModeDropdown);
     syncColorVisibility();
 
-    return {auraModeRow, colorRow, syncColorVisibility};
+    const syncToWidgets = () => {
+        auraModeDropdown.selected = Math.max(0, AURA_MODES.indexOf(getMode()));
+        const rgba = new Gdk.RGBA();
+        rgba.parse(getColor());
+        colorBtn.rgba = rgba;
+        syncColorVisibility();
+    };
+
+    return {auraModeRow, colorRow, syncColorVisibility, syncToWidgets};
 }
 
 // ── Schedule row widget ─────────────────────────────────────────────────────
 
 /**
- * A single expandable row representing one scheduled time window.
+ * A single expandable row representing one scheduled time period.
  *
  * Expands to show:
  *   Start  [HH] : [MM]   End  [HH] : [MM]   Brightness  [0–max]
- *   [Delete this window]
+ *   [Delete this period]
  */
 const ScheduleRow = GObject.registerClass({
     GTypeName: 'KbdScheduleRow',
     Signals: {
         'changed': {},
+        'confirmed': {},
         'deleted': {},
+        'discard': {},
     },
 }, class ScheduleRow extends Adw.ExpanderRow {
     _init(entry, maxBrightness, auraAvailable = false) {
         super._init();
         this._entry         = {...entry};
+        this._savedEntry    = null;
         this._maxB          = maxBrightness;
         this._auraAvailable = auraAvailable;
+        this._syncAura      = null;
 
         this._updateTitle();
 
@@ -204,21 +192,45 @@ const ScheduleRow = GObject.registerClass({
             this._entry.aura_mode = entry.aura_mode ?? 'Static';
             this._entry.color     = entry.color     ?? '#ffffff';
 
-            const {auraModeRow, colorRow} = createAuraWidgets({
+            const {auraModeRow, colorRow, syncToWidgets} = createAuraWidgets({
                 getMode:  () => this._entry.aura_mode,
                 setMode:  m => { this._entry.aura_mode = m; this._updateTitle(); },
                 getColor: () => this._entry.color,
                 setColor: c => { this._entry.color = c; this._updateTitle(); },
                 onChanged: () => this.emit('changed'),
             });
+            this._syncAura = syncToWidgets;
             this.add_row(auraModeRow);
             this.add_row(colorRow);
         }
 
+        // ── Cancel / OK confirm bar ────────────────────────────
+        // Edits are staged locally in this._entry and only written to
+        // GSettings when OK is clicked — there is no auto-save on every
+        // keystroke, so this bar is the one and only way to confirm or
+        // discard a change to this specific period.
+        const confirmRow = new Adw.ActionRow();
+        const confirmBox = new Gtk.Box({
+            spacing: 8,
+            halign: Gtk.Align.CENTER,
+            margin_top: 4,
+            margin_bottom: 4,
+        });
+        this._cancelBtn = new Gtk.Button({label: 'Cancel', css_classes: ['warning']});
+        this._cancelBtn.connect('clicked', () => this.revert());
+        this._okBtn = new Gtk.Button({label: 'OK', css_classes: ['suggested-action']});
+        this._okBtn.connect('clicked', () => this.confirm());
+        confirmBox.append(this._cancelBtn);
+        confirmBox.append(this._okBtn);
+        confirmRow.add_suffix(confirmBox);
+        this._confirmRow = confirmRow;
+        this._confirmRow.visible = false;
+        this.add_row(confirmRow);
+
         // ── Delete button ─────────────────────────────────────
         const delRow = new Adw.ActionRow();
         const delBtn = new Gtk.Button({
-            label: 'Remove this time window',
+            label: 'Remove this time period',
             css_classes: ['destructive-action'],
             halign: Gtk.Align.CENTER,
             margin_top: 4,
@@ -239,18 +251,90 @@ const ScheduleRow = GObject.registerClass({
         return spin;
     }
 
+    setEntry(entry) {
+        this._entry = {...entry};
+        this._startH.value = entry.start_h;
+        this._startM.value = entry.start_m;
+        this._endH.value   = entry.end_h;
+        this._endM.value   = entry.end_m;
+        this._brightSpin.value = entry.brightness;
+        if (this._auraAvailable) {
+            this._entry.aura_mode = entry.aura_mode ?? 'Static';
+            this._entry.color     = entry.color     ?? '#ffffff';
+            this._syncAura?.();
+        }
+        this._updateTitle();
+    }
+
+    /** True until this period has ever had OK clicked — i.e. a fresh,
+     * unconfirmed draft from "+ New Period" that isn't in GSettings yet. */
+    isNewDraft() {
+        return this._savedEntry === null;
+    }
+
+    getSavedEntry() {
+        return this._savedEntry ? {...this._savedEntry} : null;
+    }
+
+    markSaved() {
+        this._savedEntry = this.getEntry();
+        this.setConflict(false);
+        this.updateEditControlsVisibility();
+    }
+
+    isDirty() {
+        return this._savedEntry === null || !entriesEqual(this.getEntry(), this._savedEntry);
+    }
+
+    setConflict(on) {
+        if (on)
+            this.add_css_class('error');
+        else
+            this.remove_css_class('error');
+        this._okBtn.sensitive = !on;
+    }
+
+    /** Shows/hides and labels the Cancel/OK bar based on draft vs. edit state. */
+    updateEditControlsVisibility() {
+        if (this.isNewDraft()) {
+            this._confirmRow.visible = true;
+            this._cancelBtn.label = 'Cancel';
+            this._okBtn.label = 'Add';
+        } else {
+            this._confirmRow.visible = this.isDirty();
+            this._cancelBtn.label = 'Revert';
+            this._okBtn.label = 'Save';
+        }
+        this._updateTitle();
+    }
+
+    /** Cancel: discard a never-confirmed draft, or revert edits to last-saved. */
+    revert() {
+        if (this.isNewDraft())
+            this.emit('discard');
+        else {
+            this.setEntry(this._savedEntry);
+            this.emit('changed');
+        }
+    }
+
+    /** OK: ask the parent to validate + persist this period's staged edits. */
+    confirm() {
+        this.emit('confirmed');
+    }
+
     _onTimeChanged() {
         this._entry.start_h = this._startH.value;
         this._entry.start_m = this._startM.value;
         this._entry.end_h   = this._endH.value;
         this._entry.end_m   = this._endM.value;
-        this._updateTitle();
+        this.updateEditControlsVisibility();
         this.emit('changed');
     }
 
     _onBrightChanged() {
         this._entry.brightness = this._brightSpin.value;
-        this._updateTitle();
+        this.updateEditControlsVisibility();
         this.emit('changed');
     }
 
@@ -264,6 +348,8 @@ const ScheduleRow = GObject.registerClass({
             sub += `   ${m}`;
             if (m !== 'Rainbow') sub += ` ${color ?? '#ffffff'}`;
         }
+        if (this.isDirty())
+            sub += this.isNewDraft() ? '   •  Not added yet' : '   •  Unsaved edit';
         this.subtitle = sub;
     }
 
@@ -381,34 +467,44 @@ export default class KbdBacklightPreferences extends ExtensionPreferences {
         window.add(schedulePage);
 
         const scheduleContent = new Adw.PreferencesGroup({
-            title: 'Time Windows',
-            description: 'Each period must not overlap another. ' +
-                         'End < Start means the window crosses midnight.',
+            title: 'Time Periods',
+            description: 'No periods is a valid schedule — the backlight simply stays off. ' +
+                         'End before Start means the period crosses midnight. ' +
+                         'Editing a period stages the change — click OK to confirm it or ' +
+                         'Cancel/Revert to discard it.',
         });
         schedulePage.add(scheduleContent);
 
         const {schedules: initialSchedules, error: scheduleError} = loadSchedules(settings);
+        this._scheduleJsonError = !!scheduleError;
 
         const overlapBanner = new Adw.Banner({title: '', revealed: false});
         if (scheduleError) {
             overlapBanner.title = 'Schedule data is invalid and could not be loaded. ' +
-                                  'Re-add your time windows below.';
+                                  'Re-add your time periods below.';
             overlapBanner.revealed = true;
         }
         schedulePage.set_banner(overlapBanner);
         this._overlapBanner = overlapBanner;
 
-        // "Add" button row at the bottom of the group
-        const addRow = new Adw.ActionRow({title: 'Add a new time window'});
+        // "New Period" button row at the bottom of the group. Named
+        // distinctly from the per-row "OK" button — this one always starts
+        // a brand-new period; it never confirms an edit to an existing one.
+        const addRow = new Adw.ActionRow({title: 'Create a new time period'});
         const addBtn = new Gtk.Button({
-            label: '+ Add Window',
+            label: '+ New Period',
             css_classes: ['suggested-action'],
             valign: Gtk.Align.CENTER,
         });
+        this._addBtn = addBtn;
         addBtn.connect('clicked', () => {
-            const entry = {start_h: 18, start_m: 0, end_h: 23, end_m: 0, brightness: maxB, aura_mode: 'Static', color: '#ffffff'};
-            this._addScheduleRow(entry, scheduleContent, addRow, settings, maxB, auraAvailable);
-            this._validateAndSave(overlapBanner, settings);
+            this._scheduleJsonError = false;
+            const entry = nextDefaultEntry(this._liveSchedules(), maxB);
+            this._addScheduleRow(
+                entry, scheduleContent, addRow, settings, maxB, auraAvailable,
+                {expand: true}
+            );
+            this._updatePreview();
         });
         addRow.add_suffix(addBtn);
         scheduleContent.add(addRow);
@@ -416,9 +512,11 @@ export default class KbdBacklightPreferences extends ExtensionPreferences {
         // Populate existing schedules
         this._scheduleRows = [];
         for (const entry of initialSchedules)
-            this._addScheduleRow(entry, scheduleContent, addRow, settings, maxB, auraAvailable);
+            this._addScheduleRow(
+                entry, scheduleContent, addRow, settings, maxB, auraAvailable, {saved: true}
+            );
 
-        this._validateAndSave(overlapBanner, settings);
+        this._updatePreview();
 
         // ══════════════════════════════════════════════════════
         //  Page 3 – About
@@ -478,16 +576,32 @@ export default class KbdBacklightPreferences extends ExtensionPreferences {
         this._updateVisibility(modeRow.selected, alwaysOnGroup);
     }
 
-    _addScheduleRow(entry, group, addRow, settings, maxB, auraAvailable = false) {
+    _addScheduleRow(entry, group, addRow, settings, maxB, auraAvailable = false,
+                    {expand = false, saved = false} = {}) {
         const row = new ScheduleRow(entry, maxB, auraAvailable);
 
+        // 'changed' fires on every keystroke — live preview only (conflict
+        // banner + this row's own OK/Cancel bar). Nothing is written to
+        // GSettings until 'confirmed' (OK) fires.
         row.connect('changed', () => {
-            this._validateAndSave(this._overlapBanner, settings);
+            row.updateEditControlsVisibility();
+            this._updatePreview();
         });
+        row.connect('confirmed', () => this._onRowConfirmed(row, settings));
         row.connect('deleted', () => {
             group.remove(row);
             this._scheduleRows = this._scheduleRows.filter(r => r !== row);
-            this._validateAndSave(this._overlapBanner, settings);
+            this._scheduleJsonError = false;
+            this._persistConfirmed(settings, {alwaysSave: true});
+            this._updatePreview();
+        });
+        row.connect('discard', () => {
+            // Never-confirmed draft cancelled — nothing was ever persisted
+            // for it, so just drop it and refresh the live preview (it may
+            // have been the other half of a conflict shown to the user).
+            group.remove(row);
+            this._scheduleRows = this._scheduleRows.filter(r => r !== row);
+            this._updatePreview();
         });
 
         // Insert before the "Add" row by rebuilding order:
@@ -497,23 +611,79 @@ export default class KbdBacklightPreferences extends ExtensionPreferences {
         group.add(addRow);
 
         this._scheduleRows.push(row);
+        if (expand)
+            row.expanded = true;
+        if (saved)
+            row.markSaved();
+        else
+            row.updateEditControlsVisibility(); // show Cancel/Add immediately, don't wait for a first edit
+        return row;
     }
 
-    _validateAndSave(overlapBanner, settings) {
-        const schedules = this._collectSchedules();
-        const conflict = findFirstOverlap(schedules);
-        if (conflict) {
-            overlapBanner.title = overlapWarningMessage(conflict.a, conflict.b);
-            overlapBanner.revealed = true;
-            return false;
+    /** OK clicked on one row: guard against confirming a still-conflicting
+     * edit (the button is disabled in that case, but double-check), then
+     * mark it saved and persist all confirmed periods. */
+    _onRowConfirmed(row, settings) {
+        const others = this._scheduleRows.filter(r => r !== row).map(r => r.getEntry());
+        if (findOverlapWith(row.getEntry(), others)) {
+            this._updatePreview();
+            return;
         }
-        overlapBanner.revealed = false;
+        row.markSaved();
+        this._persistConfirmed(settings);
+        this._updatePreview();
+    }
+
+    _liveSchedules() {
+        return this._scheduleRows.map(r => r.getEntry());
+    }
+
+    _confirmedSchedules() {
+        return this._scheduleRows
+            .filter(r => !r.isNewDraft())
+            .map(r => r.getSavedEntry());
+    }
+
+    /** Live, read-only feedback as the user types: conflict banner + per-row
+     * error highlighting + Add-button availability. Never writes to GSettings. */
+    _updatePreview() {
+        // Don't clobber the "invalid JSON" banner before the user has done
+        // anything to recover from it (no rows exist yet to conflict-check).
+        if (this._scheduleJsonError && this._scheduleRows.length === 0)
+            return;
+
+        for (const row of this._scheduleRows)
+            row.setConflict(false);
+
+        const conflict = findFirstOverlap(this._liveSchedules());
+        if (conflict) {
+            this._overlapBanner.title = overlapEditBannerMessage(conflict.a, conflict.b);
+            this._overlapBanner.revealed = true;
+            this._scheduleRows[conflict.i]?.setConflict(true);
+            this._scheduleRows[conflict.j]?.setConflict(true);
+        } else {
+            this._overlapBanner.revealed = false;
+        }
+
+        // Only one unconfirmed draft at a time — resolve it (OK or Cancel)
+        // before starting another, so it can never be mistaken for the
+        // thing that was just being edited.
+        this._addBtn.sensitive = !this._scheduleRows.some(r => r.isNewDraft());
+    }
+
+    /** Writes the confirmed (OK'd) periods to GSettings. */
+    _persistConfirmed(settings, {alwaysSave = false} = {}) {
+        const schedules = this._confirmedSchedules();
+        const {save} = planScheduleSave(schedules, {
+            alwaysSave,
+            jsonError: this._scheduleJsonError,
+        });
+        if (!save)
+            return false;
+
+        this._scheduleJsonError = false;
         saveSchedules(settings, schedules);
         return true;
-    }
-
-    _collectSchedules() {
-        return this._scheduleRows.map(r => r.getEntry());
     }
 
     _updateVisibility(modeIndex, alwaysOnGroup) {

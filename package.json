@@ -1,0 +1,16 @@
+{
+  "name": "kbd-backlight-scheduler",
+  "private": true,
+  "type": "module",
+  "description": "Dev tooling for Keyboard Backlight Scheduler GNOME extension",
+  "scripts": {
+    "lint": "eslint extension.js prefs.js hwDetect.js scheduleLogic.js tools/*.js",
+    "validate": "./validate-js.sh",
+    "dev": "node tools/dev-devkit.js"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.28.0",
+    "eslint": "^9.28.0",
+    "globals": "^16.2.0"
+  }
+}

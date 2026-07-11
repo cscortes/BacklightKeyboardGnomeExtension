@@ -20,24 +20,30 @@ if [[ -d "$LEGACY_DIR" && "$LEGACY_DIR" != "$EXT_DIR" ]]; then
     rm -rf "$LEGACY_DIR"
 fi
 
-# ── 1. Compile GSettings schema ────────────────────────────────────────────
-echo "[1/3] Compiling GSettings schema…"
+# ── 1. Validate JS syntax ──────────────────────────────────────────────────
+echo "[1/4] Validating JS syntax…"
+"$SCRIPT_DIR/validate-js.sh"
+echo "      OK"
+
+# ── 2. Compile GSettings schema ────────────────────────────────────────────
+echo "[2/4] Compiling GSettings schema…"
 glib-compile-schemas "$SCHEMA_SRC"
 echo "      OK"
 
-# ── 2. Install extension files ─────────────────────────────────────────────
-echo "[2/3] Installing extension to $EXT_DIR…"
+# ── 3. Install extension files ─────────────────────────────────────────────
+echo "[3/4] Installing extension to $EXT_DIR…"
 mkdir -p "$EXT_DIR/schemas"
 cp "$SCRIPT_DIR/metadata.json" "$EXT_DIR/"
 cp "$SCRIPT_DIR/extension.js"  "$EXT_DIR/"
 cp "$SCRIPT_DIR/prefs.js"      "$EXT_DIR/"
 cp "$SCRIPT_DIR/hwDetect.js"   "$EXT_DIR/"
+cp "$SCRIPT_DIR/scheduleLogic.js" "$EXT_DIR/"
 cp "$SCHEMA_SRC/"*.xml             "$EXT_DIR/schemas/"
 cp "$SCHEMA_SRC/gschemas.compiled" "$EXT_DIR/schemas/"
 echo "      OK"
 
-# ── 3. Validate install ────────────────────────────────────────────────────
-echo "[3/3] Validating install…"
+# ── 4. Validate install ────────────────────────────────────────────────────
+echo "[4/4] Validating install…"
 fail() { echo "      FAIL: $1" >&2; exit 1; }
 warn() { echo "      WARN: $1"; }
 
@@ -48,6 +54,7 @@ REQUIRED_FILES=(
     extension.js
     prefs.js
     hwDetect.js
+    scheduleLogic.js
     schemas/gschemas.compiled
     schemas/org.gnome.shell.extensions.kbd-backlight-scheduler.gschema.xml
 )
