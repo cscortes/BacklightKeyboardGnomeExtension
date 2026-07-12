@@ -5,6 +5,8 @@ A GNOME Shell extension that automatically controls keyboard backlight brightnes
 Tested on Fedora 44 with an ASUS laptop, GNOME Shell 50.2. Compatible with GNOME 45–50.
 Version: **0.4.2**
 
+> Contributing or modifying the code? See **[DevReadme.md](DevReadme.md)** instead.
+
 ---
 
 ## Features
@@ -126,78 +128,6 @@ gnome-extensions enable kbd-backlight-scheduler@cscortes.gnome
 
 Or use **Extensions** / **Extension Manager** from the app grid.
 
-### Development loop
-
-There are two deploy paths:
-
-- **`make install`** (or `./install.sh`) — the regular path. Validates, compiles the schema, and copies files into `~/.local/share/gnome-shell/extensions/kbd-backlight-scheduler@cscortes.gnome/`. GNOME Shell only picks up the change on its next restart (log out/in on Wayland, `Alt+F2 → r` on X11) — use this before a real restart, e.g. final checks before a release.
-- **`make dev`** (or `npm run dev`) — the fast dev loop. GNOME Shell only discovers new/changed extension code when its own process starts (directory scan + GJS module cache are both process-lifetime), so `make dev` launches a disposable **nested devkit Shell** in its own window via `dbus-run-session -- gnome-shell --devkit --wayland`. It shares your `$HOME`, so it picks up the extension and your real GSettings/schedule, but runs in a private D-Bus session that can't affect your real desktop. On every save, it kills and relaunches the nested Shell (~1–2s) so the new code is always fresh — no logout required. Requires the `mutter-devkit` package (`sudo dnf install -y mutter-devkit`, included in `make dev-setup`).
-
-### Versioning
-
-`metadata.json` defines **two** version fields. They are related but not interchangeable.
-
-| Field | Example | Purpose |
-|---|---|---|
-| `"version"` | `9` | **GNOME integer version** — required by GNOME Shell, Extension Manager, and `extensions.gnome.org`. Must increase on every installable build (1, 2, 3 …). |
-| `"semantic-version"` | `"0.3.3"` | **Human-readable semver** — shown in the panel menu, Settings → About, `install.sh` output, and this README. |
-
-GNOME only understands the integer. The semver string is a project convention for readable release labels.
-
-**Bump rules**
-
-| Change type | `semantic-version` | `"version"` |
-|---|---|---|
-| Bug fix | patch — e.g. `0.3.1` → `0.3.2` | increment by 1 |
-| New feature | minor — e.g. `0.3.1` → `0.4.0` | increment by 1 |
-| Every installable build | (as above) | **always** increment by 1 |
-
-**What to update when releasing**
-
-1. **`metadata.json`** — both `"version"` and `"semantic-version"` (source of truth)
-2. **`README.md`** — `Version:` line near the top (keep in sync for readers who don't open metadata)
-3. **`buglist.md`** — optional; note fix/feature version in entries when helpful
-
-Everything else reads from `metadata.json` at runtime or install time (`extension.js`, `prefs.js`, `install.sh`).
-
-**Install and confirm**
-
-Requires **Node.js** and **npm** for ESLint (`sudo dnf install nodejs npm` on Fedora).
-
-```bash
-npm install          # first time only — installs eslint
-./validate-js.sh     # ESLint + syntax check + prefs smoke test
-./install.sh         # runs validate-js.sh automatically as step 1
-```
-
-`validate-js.sh` runs three checks before anything is deployed:
-
-| Step | Tool | Catches |
-|---|---|---|
-| ESLint | Node.js | Duplicate `const`, unreachable code, common logic errors |
-| gjs syntax | `gjs -c` | SyntaxErrors without loading GTK |
-| prefs smoke | `gjs` + real Gtk/Adw | Wrong widget properties, invalid parenting, `fillPreferencesWindow` crashes |
-
-The prefs smoke test builds Settings in a headless window — the same code path that failed with `reveal` vs `revealed` and `set_banner()` — **without reloading GNOME Shell**.
-
-It does **not** replace a quick open of the panel menu after install for extension.js behaviour.
-
-```bash
-gnome-extensions disable kbd-backlight-scheduler@cscortes.gnome
-gnome-extensions enable kbd-backlight-scheduler@cscortes.gnome
-```
-
-`install.sh` validates the on-disk files and warns if GNOME Shell is still running an older integer build (common on Wayland until you log out/in).
-
-**Where to check the running version**
-
-| Location | Shows |
-|---|---|
-| Settings → About | `semantic-version` (e.g. `v0.3.2`) |
-| Panel menu footer | `semantic-version` |
-| `gnome-extensions info …` | integer `version` (e.g. `8`) |
-| `install.sh` output | both, after validation |
-
 ### Optional: ASUS RGB color control (asusctl)
 
 White backlight **brightness scheduling works without asusctl**. To enable per-period
@@ -205,43 +135,6 @@ White backlight **brightness scheduling works without asusctl**. To enable per-p
 install asusctl on Fedora:
 
 **[→ ASUS Color Control on Fedora](docs/asus-color-control-fedora.md)**
-
----
-
-## Testing the backlight
-
-Run the hardware detection script to see what your machine exposes (sysfs, GSD, Aura):
-
-```bash
-python3 test-detect-hardware.py
-```
-
-Run the interactive brightness test to cycle through every brightness level and confirm each one physically changes the hardware:
-
-```bash
-python3 test-backlight.py
-```
-
-At each level it waits 1 second then asks `Did the backlight change? [y/n/s=skip]`.
-Your original brightness is restored automatically when the test finishes.
-
-You can also test a single level directly:
-
-```bash
-# Full brightness
-gdbus call --session \
-  --dest org.gnome.SettingsDaemon.Power \
-  --object-path /org/gnome/SettingsDaemon/Power \
-  --method org.freedesktop.DBus.Properties.Set \
-  "org.gnome.SettingsDaemon.Power.Keyboard" "Brightness" "<int32 100>"
-
-# Off
-gdbus call --session \
-  --dest org.gnome.SettingsDaemon.Power \
-  --object-path /org/gnome/SettingsDaemon/Power \
-  --method org.freedesktop.DBus.Properties.Set \
-  "org.gnome.SettingsDaemon.Power.Keyboard" "Brightness" "<int32 0>"
-```
 
 ---
 
@@ -253,70 +146,6 @@ gdbus call --session \
 | Early morning | 12:05 AM | 9:00 AM | 1 (dim) |
 
 The gap 11:45 PM – 12:05 AM has no active period — backlight turns off automatically.
-
----
-
-## How it works
-
-### Scheduling engine
-
-Every 60 seconds (and on any settings change), the extension:
-
-1. Reads the current time in minutes since midnight
-2. Checks every schedule entry: `start ≤ now < end` (or wraps midnight when `end < start`)
-3. Finds the single active entry for the current time (0 if none)
-4. Sends that value to GSD via D-Bus
-
-### Brightness backend
-
-Brightness is controlled via `org.gnome.SettingsDaemon.Power.Keyboard` — the same D-Bus interface GNOME's own panel slider uses. GSD handles hardware access and SELinux context internally. No sysfs writes, no udev rules, no elevated privileges.
-
-GSD exposes brightness as a percentage (0–100). The extension reads the number of discrete `Steps` from GSD at startup and converts:
-
-```
-percentage = round(level / (steps - 1) × 100)
-```
-
----
-
-## File structure
-
-```
-GnomeExtension/
-├── Makefile             Dev targets: dev-setup, validate, install, reload, dev
-├── metadata.json        UUID, integer version (GNOME), semantic-version (display)
-├── extension.js         Panel indicator + scheduling engine
-├── prefs.js             Settings UI (General, Schedule, and About tabs)
-├── hwDetect.js          ASUS WMI / Aura hardware detection
-├── scheduleLogic.js     Pure schedule logic: overlap checks, free-slot finding
-├── package.json         npm scripts + ESLint dev dependency manifest (Node.js)
-├── eslint.config.js     Lint rules for extension JS
-├── validate-js.sh       Pre-install validation (ESLint + gjs smoke test)
-├── install.sh           Schema compile + file install (no sudo needed)
-├── tools/
-│   ├── check-syntax.js       gjs parse-check helper
-│   ├── prefs-smoke.js        Headless Settings UI smoke test
-│   ├── schedule-logic-test.js  Unit tests for scheduleLogic.js
-│   ├── dev-devkit.js         Nested devkit Shell dev loop (`make dev`)
-│   └── stubs/                Test doubles for prefs smoke test
-├── test-backlight.py    Interactive brightness hardware test
-├── test-detect-hardware.py  Sysfs / GSD / Aura detection report
-├── docs/
-│   └── asus-color-control-fedora.md  Install asusctl for RGB on Fedora
-└── schemas/
-    └── org.gnome.shell.extensions.kbd-backlight-scheduler.gschema.xml
-```
-
-### GSettings keys
-
-| Key | Type | Default | Description |
-|---|---|---|---|
-| `mode` | string | `scheduled` | `always-on`, `always-off`, or `scheduled` |
-| `brightness` | int | `3` | Level for Always On mode |
-| `always-on-aura-mode` | string | `Static` | Aura effect for Always On mode |
-| `always-on-aura-color` | string | `#ffffff` | Aura colour for Always On mode |
-| `schedules` | string | `[]` | JSON array of `{start_h, start_m, end_h, end_m, brightness}` |
-| `max-brightness` | int | `3` | Fallback if GSD Steps cannot be read at startup |
 
 ---
 

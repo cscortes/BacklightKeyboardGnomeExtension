@@ -1,7 +1,7 @@
 # Keyboard Backlight Scheduler — development targets
 UUID := $(shell grep -Po '(?<="uuid": ")[^"]+' metadata.json)
 
-.PHONY: help dev-setup validate install reload dev
+.PHONY: help dev-setup validate install reload dev pack
 
 help:
 	@echo "Keyboard Backlight Scheduler — make targets"
@@ -11,6 +11,7 @@ help:
 	@echo "  make install     validate, then deploy to ~/.local/share/gnome-shell/extensions/"
 	@echo "  make reload      install + disable/enable extension (prefs.js changes only)"
 	@echo "  make dev         Nested devkit GNOME Shell dev loop — auto reinstall + relaunch on save"
+	@echo "  make pack        Build a .shell-extension.zip in dist/ for gnome-extensions install / extensions.gnome.org"
 	@echo ""
 	@echo "UUID: $(UUID)"
 
@@ -30,3 +31,11 @@ reload:
 
 dev:
 	npm run dev
+
+pack: validate
+	mkdir -p dist
+	gnome-extensions pack . \
+		--extra-source=hwDetect.js \
+		--extra-source=scheduleLogic.js \
+		-o dist -f
+	@echo "Built dist/$(UUID).shell-extension.zip"
