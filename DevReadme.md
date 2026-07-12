@@ -110,7 +110,7 @@ gnome-extensions pack . \
 pack`; the `schemas/` folder is auto-detected too. `hwDetect.js` and `scheduleLogic.js` are
 extra local imports that must be listed explicitly with `--extra-source`, or the bundle will
 be missing files GNOME Shell tries to `import` at runtime — if a new top-level `.js` file is
-ever added to the extension, add it here too. The output lands in `dist/` (gitignored).
+ever added to the extension, add it here too. `LICENSE` is also included explicitly. The output lands in `dist/` (gitignored).
 
 Install the built bundle for a quick local test of the real packaging path:
 

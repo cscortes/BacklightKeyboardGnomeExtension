@@ -37,5 +37,6 @@ pack: validate
 	gnome-extensions pack . \
 		--extra-source=hwDetect.js \
 		--extra-source=scheduleLogic.js \
+		--extra-source=LICENSE \
 		-o dist -f
 	@echo "Built dist/$(UUID).shell-extension.zip"
