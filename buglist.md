@@ -52,6 +52,33 @@ Severity tiers: **High** → **Midhigh** → **Medium** → **Midlow** → **Low
 - **Description:** `metadata.json` declared `kbd-backlight-scheduler@cscortes.gnome`, but install scripts copied files to `kbd-backlight-scheduler@lcortes.gnome` and `gnome-extensions enable` used the `@lcortes` name. GNOME requires the install directory name to match the `uuid` in `metadata.json`; the mismatch caused “Extension does not exist” and a shell journal error refusing to load the extension.
 - **Repro:** Run `./install.sh`; run `gnome-extensions enable kbd-backlight-scheduler@lcortes.gnome` — extension not found. Check journal: `UUID from metadata.json does not match directory name`.
 
+### UUID namespace (`@cscortes.gnome`) risked looking GNOME-affiliated for EGO submission
+- **Author:** Cursor Agent
+- **Date found:** 2026-07-11
+- **Status:** Fixed
+- **Date fixed:** 2026-07-11
+- **Fix:** Renamed UUID from `kbd-backlight-scheduler@cscortes.gnome` to
+  `kbd-backlight-scheduler@cscortes.github.io`, matching the domain in the extension's own
+  `url` field (`github.com/cscortes/...`) per the
+  [GNOME UUID guidelines](https://gjs.guide/extensions/review-guidelines/review-guidelines.html)'
+  recommendation to use a namespace you actually control (`username.github.io`,
+  `username.gmail.com`), rather than one merely containing `.gnome`. `install.sh` now also
+  removes the `@cscortes.gnome` folder as a second legacy-migration entry (alongside the
+  pre-existing `@lcortes.gnome` one).
+- **Files:** `metadata.json`, `install.sh`, `README.md`, `DevReadme.md`, `docs/asus-color-control-fedora.md`
+- **Description:** Ahead of a planned `extensions.gnome.org` submission, review of the
+  [Review Guidelines](https://gjs.guide/extensions/review-guidelines/review-guidelines.html)
+  showed the UUID namespace should be a domain/account the developer controls; `.gnome` isn't
+  one and could read as implying GNOME affiliation, even though it technically doesn't match
+  the hard-banned `gnome.org` suffix.
+- **Impact on existing installs:** GNOME Shell tracks enabled extensions by UUID, so this is a
+  breaking rename for anyone already running the old UUID — after updating, you must
+  re-run `gnome-extensions enable kbd-backlight-scheduler@cscortes.github.io` (the old UUID
+  will show as removed/orphaned). Saved schedules are **not** lost: the GSettings schema
+  path (`/org/gnome/shell/extensions/kbd-backlight-scheduler/`) is independent of the UUID
+  namespace, so existing `schedules`/`mode`/`brightness` values carry over automatically once
+  re-enabled.
+
 ---
 
 ## Medium

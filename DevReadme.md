@@ -43,7 +43,7 @@ There are two deploy paths:
 
 - **`make install`** (or `./install.sh`) — the regular path. Validates, compiles the
   schema, and copies files into
-  `~/.local/share/gnome-shell/extensions/kbd-backlight-scheduler@cscortes.gnome/`. GNOME
+  `~/.local/share/gnome-shell/extensions/kbd-backlight-scheduler@cscortes.github.io/`. GNOME
   Shell only picks up the change on its next restart (log out/in on Wayland, `Alt+F2 → r`
   on X11) — use this before a real restart, e.g. final checks before a release.
 - **`make dev`** (or `npm run dev`) — the fast dev loop. GNOME Shell only discovers
@@ -64,8 +64,8 @@ scheduling logic, and panel indicator, not final hardware verification. Use `mak
 ### Manual reload of an already-installed build
 
 ```bash
-gnome-extensions disable kbd-backlight-scheduler@cscortes.gnome
-gnome-extensions enable kbd-backlight-scheduler@cscortes.gnome
+gnome-extensions disable kbd-backlight-scheduler@cscortes.github.io
+gnome-extensions enable kbd-backlight-scheduler@cscortes.github.io
 ```
 
 This picks up `prefs.js` changes (Settings windows are spawned fresh each time), but **not**
@@ -115,7 +115,7 @@ ever added to the extension, add it here too. The output lands in `dist/` (gitig
 Install the built bundle for a quick local test of the real packaging path:
 
 ```bash
-gnome-extensions install --force dist/kbd-backlight-scheduler@cscortes.gnome.shell-extension.zip
+gnome-extensions install --force dist/kbd-backlight-scheduler@cscortes.github.io.shell-extension.zip
 ```
 
 Note that `gnome-extensions pack` does **not** embed a compiled `gschemas.compiled` in the

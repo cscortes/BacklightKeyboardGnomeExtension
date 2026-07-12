@@ -170,8 +170,8 @@ After asusctl is installed and `asusd` is running:
 ```bash
 cd ~/Code/GnomeExtension
 ./install.sh
-gnome-extensions disable kbd-backlight-scheduler@cscortes.gnome
-gnome-extensions enable kbd-backlight-scheduler@cscortes.gnome
+gnome-extensions disable kbd-backlight-scheduler@cscortes.github.io
+gnome-extensions enable kbd-backlight-scheduler@cscortes.github.io
 ```
 
 Open **Settings → Schedule** in the extension panel menu. Each time period should now

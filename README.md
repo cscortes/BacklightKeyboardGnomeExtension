@@ -3,7 +3,7 @@
 A GNOME Shell extension that automatically controls keyboard backlight brightness on a time-of-day schedule.
 
 Tested on Fedora 44 with an ASUS laptop, GNOME Shell 50.2. Compatible with GNOME 45–50.
-Version: **0.4.2**
+Version: **0.5.0**
 
 > Contributing or modifying the code? See **[DevReadme.md](DevReadme.md)** instead.
 
@@ -107,7 +107,7 @@ make install      # or: make validate && ./install.sh
 `make dev-setup` installs `glib2-devel`, `nodejs`, `npm`, and `gjs` via `dnf`, then runs `npm install`. Requires `sudo` for system packages.
 
 The installer compiles the GSettings schema and copies all files to
-`~/.local/share/gnome-shell/extensions/kbd-backlight-scheduler@cscortes.gnome/`
+`~/.local/share/gnome-shell/extensions/kbd-backlight-scheduler@cscortes.github.io/`
 (extension UUID is defined in `metadata.json`; install scripts read it from there).
 No sudo required.
 
@@ -123,7 +123,7 @@ echo $XDG_SESSION_TYPE   # check x11 or wayland
 ### Enable
 
 ```bash
-gnome-extensions enable kbd-backlight-scheduler@cscortes.gnome
+gnome-extensions enable kbd-backlight-scheduler@cscortes.github.io
 ```
 
 Or use **Extensions** / **Extension Manager** from the app grid.
@@ -167,13 +167,13 @@ journalctl /usr/bin/gnome-shell -b --output=cat | grep KbdBacklight
 **Settings window won't open**
 ```bash
 glib-compile-schemas \
-  ~/.local/share/gnome-shell/extensions/kbd-backlight-scheduler@cscortes.gnome/schemas/
+  ~/.local/share/gnome-shell/extensions/kbd-backlight-scheduler@cscortes.github.io/schemas/
 ```
 
 **Extension doesn't load**
 ```bash
 gnome-shell --version
-gnome-extensions info kbd-backlight-scheduler@cscortes.gnome
+gnome-extensions info kbd-backlight-scheduler@cscortes.github.io
 ```
 
 **Aura RGB not detected / no color options in Settings**

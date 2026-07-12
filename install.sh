@@ -10,15 +10,20 @@ METADATA="$SCRIPT_DIR/metadata.json"
 UUID="$(grep -Po '(?<="uuid": ")[^"]+' "$METADATA")"
 VERSION="$(grep -Po '(?<="semantic-version": ")[^"]+' "$METADATA")"
 EXT_DIR="$HOME/.local/share/gnome-shell/extensions/$UUID"
-# Pre-0.2.3 installs used @lcortes.gnome; folder name must match metadata.json uuid.
-LEGACY_DIR="$HOME/.local/share/gnome-shell/extensions/kbd-backlight-scheduler@lcortes.gnome"
+# Older installs used other UUID namespaces; folder name must match metadata.json uuid.
+LEGACY_DIRS=(
+    "$HOME/.local/share/gnome-shell/extensions/kbd-backlight-scheduler@lcortes.gnome"
+    "$HOME/.local/share/gnome-shell/extensions/kbd-backlight-scheduler@cscortes.gnome"
+)
 
 echo "=== Keyboard Backlight Scheduler – installer (v${VERSION}) ==="
 
-if [[ -d "$LEGACY_DIR" && "$LEGACY_DIR" != "$EXT_DIR" ]]; then
-    echo "Removing legacy install at $LEGACY_DIR (UUID is now $UUID)…"
-    rm -rf "$LEGACY_DIR"
-fi
+for LEGACY_DIR in "${LEGACY_DIRS[@]}"; do
+    if [[ -d "$LEGACY_DIR" && "$LEGACY_DIR" != "$EXT_DIR" ]]; then
+        echo "Removing legacy install at $LEGACY_DIR (UUID is now $UUID)…"
+        rm -rf "$LEGACY_DIR"
+    fi
+done
 
 # ── 1. Validate JS syntax ──────────────────────────────────────────────────
 echo "[1/4] Validating JS syntax…"
