@@ -1,13 +1,14 @@
 # Keyboard Backlight Scheduler — development targets
 UUID := $(shell grep -Po '(?<="uuid": ")[^"]+' metadata.json)
 
-.PHONY: help dev-setup validate install reload dev pack
+.PHONY: help dev-setup validate install reload dev pack ci
 
 help:
 	@echo "Keyboard Backlight Scheduler — make targets"
 	@echo ""
 	@echo "  make dev-setup   Install system + npm deps and verify environment"
 	@echo "  make validate    ESLint + syntax check + schedule tests + prefs smoke test"
+	@echo "  make ci          validate + metadata/schema/hygiene + pack zip inspect (GitHub Actions)"
 	@echo "  make install     validate, then deploy to ~/.local/share/gnome-shell/extensions/"
 	@echo "  make reload      install + disable/enable extension (prefs.js changes only)"
 	@echo "  make dev         Nested devkit GNOME Shell dev loop — auto reinstall + relaunch on save"
@@ -22,6 +23,9 @@ dev-setup:
 
 validate:
 	./validate-js.sh
+
+ci: validate
+	./tools/ci-verify.sh
 
 install:
 	./install.sh

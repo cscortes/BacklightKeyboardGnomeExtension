@@ -1,0 +1,201 @@
+# Pack the extension and publish a public GitHub Release when a version tag is pushed.
+#
+# Rules:
+#   1. If this version already has a GitHub Release → fail with an error, no zip, no release.
+#   2. If verification fails → fail with an error, no zip, no release.
+#   3. Only after a new version + passing verify → pack and create a public Release
+#      (visible under the repo's Releases page).
+#
+# Tag must match metadata.json "semantic-version" with a leading v:
+#   semantic-version "0.5.1"  →  git tag v0.5.1 && git push origin v0.5.1
+#
+# Before tagging: bump "version" (integer) + "semantic-version" in metadata.json
+# and the README Version line, then commit on master.
+#
+# workflow_dispatch runs the same guards + verify/pack, but does not publish a Release.
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Pack · GitHub Release
+    runs-on: ubuntu-24.04
+    env:
+      GSETTINGS_BACKEND: memory
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve version from metadata + tag
+        id: ver
+        run: |
+          set -euo pipefail
+          SEMVER="$(python3 -c 'import json; print(json.load(open("metadata.json"))["semantic-version"])')"
+          BUILD="$(python3 -c 'import json; print(json.load(open("metadata.json"))["version"])')"
+          UUID="$(python3 -c 'import json; print(json.load(open("metadata.json"))["uuid"])')"
+          EXPECTED_TAG="v${SEMVER}"
+
+          if [[ "${{ github.ref_type }}" == "tag" ]]; then
+            TAG="${{ github.ref_name }}"
+            if [[ "$TAG" != "$EXPECTED_TAG" ]]; then
+              echo "::error::Tag '$TAG' does not match metadata semantic-version '$SEMVER' (expected '$EXPECTED_TAG'). Bump metadata.json + README, commit, then retag. No release bundle will be created."
+              exit 1
+            fi
+            PUBLISH=true
+          else
+            TAG="$EXPECTED_TAG"
+            PUBLISH=false
+            echo "workflow_dispatch: verify/pack only for $TAG (push this tag to publish a Release)."
+          fi
+
+          {
+            echo "semver=$SEMVER"
+            echo "build=$BUILD"
+            echo "uuid=$UUID"
+            echo "tag=$TAG"
+            echo "publish=$PUBLISH"
+            echo "zip_name=${UUID}.shell-extension.zip"
+            echo "asset_name=${UUID}-v${SEMVER}.shell-extension.zip"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "Release target: $TAG (semantic $SEMVER, GNOME build $BUILD, publish=$PUBLISH)"
+
+      - name: Reject duplicate version (no bundle if release already exists)
+        run: |
+          set -euo pipefail
+          TAG="${{ steps.ver.outputs.tag }}"
+          SEMVER="${{ steps.ver.outputs.semver }}"
+          BUILD="${{ steps.ver.outputs.build }}"
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            URL="$(gh release view "$TAG" --json url -q .url)"
+            echo "::error::Version $TAG (semantic-version $SEMVER, GNOME build $BUILD) already has a GitHub Release. Bump both version fields in metadata.json (and README), commit, and tag the new version. No release bundle will be created."
+            echo "Existing release: $URL"
+            exit 1
+          fi
+
+          # Refuse if any existing release already used this tag or bare semver name
+          if gh release list --limit 100 --json tagName,name \
+            --jq ".[] | select(.tagName == \"$TAG\" or .tagName == \"$SEMVER\" or .name == \"$TAG\" or .name == \"$SEMVER\" or .name == \"v$SEMVER\") | .tagName" \
+            | grep -q .; then
+            echo "::error::A GitHub Release for semantic-version $SEMVER already exists. Bump semantic-version (and integer version) before releasing again. No release bundle will be created."
+            exit 1
+          fi
+
+          echo "No existing release for $TAG — version is new."
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Install system packages
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            gjs \
+            gir1.2-gtk-4.0 \
+            gir1.2-adw-1 \
+            libglib2.0-bin \
+            xvfb \
+            zip \
+            unzip \
+            dbus-x11
+
+      - name: Install npm dependencies
+        run: npm ci --no-fund --no-audit
+
+      - name: Verify (must pass or no release bundle)
+        run: |
+          set -euo pipefail
+          if ! xvfb-run -a dbus-run-session -- ./validate-js.sh; then
+            echo "::error::Verification failed (lint / gjs syntax / schedule tests / prefs smoke). No release zip will be built or published."
+            exit 1
+          fi
+
+      - name: Pack + hygiene (only after verify passes)
+        run: |
+          set -euo pipefail
+          chmod +x tools/ci-verify.sh
+          if ! ./tools/ci-verify.sh; then
+            echo "::error::Packaging / metadata / hygiene checks failed. No release zip will be published."
+            exit 1
+          fi
+          cp "dist/${{ steps.ver.outputs.zip_name }}" \
+             "dist/${{ steps.ver.outputs.asset_name }}"
+          ls -la dist/
+
+      - name: Upload packed extension (workflow artifact)
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ steps.ver.outputs.tag }}
+          path: |
+            dist/${{ steps.ver.outputs.zip_name }}
+            dist/${{ steps.ver.outputs.asset_name }}
+          if-no-files-found: error
+
+      - name: Create public GitHub Release
+        if: steps.ver.outputs.publish == 'true'
+        run: |
+          set -euo pipefail
+          TAG="${{ steps.ver.outputs.tag }}"
+          SEMVER="${{ steps.ver.outputs.semver }}"
+          BUILD="${{ steps.ver.outputs.build }}"
+          ASSET="dist/${{ steps.ver.outputs.asset_name }}"
+          ZIP="dist/${{ steps.ver.outputs.zip_name }}"
+
+          # Re-check immediately before publish (race with a parallel run)
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "::error::Release $TAG appeared while this job was running. No assets uploaded; version is unchanged."
+            exit 1
+          fi
+
+          NOTES=$(cat <<EOF
+          ## Keyboard Backlight Scheduler ${TAG}
+
+          - **semantic-version:** \`${SEMVER}\`
+          - **GNOME build (\`metadata.json\` \`version\`):** \`${BUILD}\`
+
+          ### Install
+
+          \`\`\`bash
+          gnome-extensions install --force ${{ steps.ver.outputs.asset_name }}
+          \`\`\`
+
+          Then log out/in (Wayland) or \`Alt+F2\` → \`r\` (X11), and enable the extension.
+
+          Also attached: \`${{ steps.ver.outputs.zip_name }}\` (EGO / \`gnome-extensions pack\` layout).
+          EOF
+          )
+          NOTES="$(printf '%s\n' "$NOTES" | sed -e 's/^          //')"
+
+          # Public (not draft, not prerelease) so it shows on the repo Releases page
+          gh release create "$TAG" "$ASSET" "$ZIP" \
+            --title "v${SEMVER}" \
+            --notes "$NOTES" \
+            --latest
+
+          URL="$(gh release view "$TAG" --json url -q .url)"
+          echo "Published public release: $URL"
+          echo "### Release published" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Tag:** \`$TAG\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **semantic-version:** \`$SEMVER\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **GNOME build:** \`$BUILD\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **URL:** $URL" >> "$GITHUB_STEP_SUMMARY"

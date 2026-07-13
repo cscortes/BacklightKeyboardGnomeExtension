@@ -31,6 +31,10 @@ npm install          # first time only — installs eslint
 | schedule logic tests | `gjs` | Regressions in overlap detection / save planning (`scheduleLogic.js`) |
 | prefs smoke | `gjs` + real Gtk/Adw | Wrong widget properties, invalid parenting, `fillPreferencesWindow` crashes |
 
+GitHub Actions runs the same checks on every push/PR via `.github/workflows/verify.yml`, then
+`tools/ci-verify.sh` (metadata/README version sync, strict schema compile, import hygiene, pack
++ zip layout). Locally: `make ci`.
+
 The prefs smoke test builds Settings in a headless window — the same code path that failed
 with `reveal` vs `revealed` and `set_banner()` — **without reloading GNOME Shell**.
 
@@ -152,6 +156,27 @@ GNOME only understands the integer. The semver string is a project convention fo
 3. **`buglist.md`** — optional; note fix/feature version in entries when helpful
 
 Everything else reads from `metadata.json` at runtime or install time (`extension.js`, `prefs.js`, `install.sh`).
+
+**Publish a GitHub Release**
+
+After the version bump is committed on `master`:
+
+```bash
+git tag v0.5.1          # must match metadata "semantic-version" with a leading v
+git push origin v0.5.1
+```
+
+That triggers `.github/workflows/release.yml` with these rules:
+
+| Condition | Result |
+|---|---|
+| Version/tag already has a GitHub Release | **Error** — no zip, no release (bump versions first) |
+| Verification or pack checks fail | **Error** — no zip published as a Release |
+| New version **and** checks pass | Public Release on the repo **Releases** page with the zip attached |
+
+The tag and `semantic-version` must match or the workflow fails. Manual **workflow_dispatch**
+runs the same duplicate-version + verify gates and packs a candidate artifact, but does
+**not** publish a Release — push a `v*.*.*` tag for that.
 
 ## Hardware test scripts (debugging)
 
