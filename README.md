@@ -180,3 +180,9 @@ gnome-extensions info kbd-backlight-scheduler@cscortes.github.io
 
 See **[docs/asus-color-control-fedora.md](docs/asus-color-control-fedora.md)** for Fedora
 asusctl installation. Brightness scheduling does not require Aura.
+
+---
+
+AI tools helped develop this extension. Initial construction was done with Claude; finishing
+work used GitHub Copilot. On this project Claude was technically stronger, but harder to
+install and use in VS Code.

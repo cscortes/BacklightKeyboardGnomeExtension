@@ -42,43 +42,6 @@ Severity tiers: **High** → **Midhigh** → **Medium** → **Midlow** → **Low
 - **Description:** The per-window brightness spin button is created with `Gtk.SpinButton.new_with_range(1, maxBrightness, 1)`, so users cannot assign brightness level `0` to a schedule window. The only way to get "off" during a scheduled period is to have no active window covering that time, not an explicit off level inside a window.
 - **Repro:** Open Schedule tab, expand a window, try to set brightness to Off / 0.
 
-### Extension UUID mismatch between metadata and install path (`@lcortes` vs `@cscortes`)
-- **Author:** Cursor Agent
-- **Date found:** 2026-07-11
-- **Status:** Fixed
-- **Date fixed:** 2026-07-11
-- **Fix:** `install.sh` and `dev-reload.sh` now read UUID from `metadata.json`; README/docs updated to `@cscortes.gnome`; legacy `@lcortes.gnome` install folder removed on install.
-- **Files:** `metadata.json`, `install.sh`, `dev-reload.sh`, `README.md`, `docs/asus-color-control-fedora.md`
-- **Description:** `metadata.json` declared `kbd-backlight-scheduler@cscortes.gnome`, but install scripts copied files to `kbd-backlight-scheduler@lcortes.gnome` and `gnome-extensions enable` used the `@lcortes` name. GNOME requires the install directory name to match the `uuid` in `metadata.json`; the mismatch caused “Extension does not exist” and a shell journal error refusing to load the extension.
-- **Repro:** Run `./install.sh`; run `gnome-extensions enable kbd-backlight-scheduler@lcortes.gnome` — extension not found. Check journal: `UUID from metadata.json does not match directory name`.
-
-### UUID namespace (`@cscortes.gnome`) risked looking GNOME-affiliated for EGO submission
-- **Author:** Cursor Agent
-- **Date found:** 2026-07-11
-- **Status:** Fixed
-- **Date fixed:** 2026-07-11
-- **Fix:** Renamed UUID from `kbd-backlight-scheduler@cscortes.gnome` to
-  `kbd-backlight-scheduler@cscortes.github.io`, matching the domain in the extension's own
-  `url` field (`github.com/cscortes/...`) per the
-  [GNOME UUID guidelines](https://gjs.guide/extensions/review-guidelines/review-guidelines.html)'
-  recommendation to use a namespace you actually control (`username.github.io`,
-  `username.gmail.com`), rather than one merely containing `.gnome`. `install.sh` now also
-  removes the `@cscortes.gnome` folder as a second legacy-migration entry (alongside the
-  pre-existing `@lcortes.gnome` one).
-- **Files:** `metadata.json`, `install.sh`, `README.md`, `DevReadme.md`, `docs/asus-color-control-fedora.md`
-- **Description:** Ahead of a planned `extensions.gnome.org` submission, review of the
-  [Review Guidelines](https://gjs.guide/extensions/review-guidelines/review-guidelines.html)
-  showed the UUID namespace should be a domain/account the developer controls; `.gnome` isn't
-  one and could read as implying GNOME affiliation, even though it technically doesn't match
-  the hard-banned `gnome.org` suffix.
-- **Impact on existing installs:** GNOME Shell tracks enabled extensions by UUID, so this is a
-  breaking rename for anyone already running the old UUID — after updating, you must
-  re-run `gnome-extensions enable kbd-backlight-scheduler@cscortes.github.io` (the old UUID
-  will show as removed/orphaned). Saved schedules are **not** lost: the GSettings schema
-  path (`/org/gnome/shell/extensions/kbd-backlight-scheduler/`) is independent of the UUID
-  namespace, so existing `schedules`/`mode`/`brightness` values carry over automatically once
-  re-enabled.
-
 ---
 
 ## Medium
@@ -195,16 +158,6 @@ Severity tiers: **High** → **Midhigh** → **Medium** → **Midlow** → **Low
 - **Description:** The Schedule tab's "+ Add Window" button and related strings/identifiers used "window" to mean a scheduled time span, while the same file also has a real GTK `Adw.PreferencesWindow` (`fillPreferencesWindow`, `window.add()`). The overloaded term made it easy to misread "Add Window" as opening a new dialog rather than adding a time period.
 - **Repro:** N/A — naming/clarity issue, not a functional bug.
 
-### Version metadata inconsistent across project files
-- **Author:** Cursor Agent
-- **Date found:** 2026-07-01
-- **Status:** Fixed
-- **Date fixed:** 2026-07-01
-- **Fix:** README version updated to `0.2.0` to match `metadata.json` `semantic-version`.
-- **Files:** `README.md`, `metadata.json`
-- **Description:** README states version **0.1.1**; `metadata.json` has `"version": 1` and `"semantic-version": "0.2.0"`. The About row in Settings reads `semantic-version`, so documentation and packaging disagree.
-- **Repro:** Compare README, `metadata.json`, and Settings → About version string.
-
 ### Malformed schedules JSON fails silently
 - **Author:** Cursor Agent
 - **Date found:** 2026-07-01
@@ -224,16 +177,6 @@ Severity tiers: **High** → **Midhigh** → **Medium** → **Midlow** → **Low
 - **File:** `prefs.js` — `ScheduleRow`
 - **Description:** Color picker row visibility is tied to Aura mode changes inside the Settings expander only. If `aura_mode` is changed elsewhere or loaded with `Rainbow`, edge-case UI state depends on widget init order. Minor UX inconsistency compared to panel indicator refresh logic.
 - **Repro:** Set a schedule entry with `aura_mode: Rainbow` via gsettings; open Settings and expand row — color row should be hidden; verify behavior after mode changes.
-
-### No `url` in metadata.json
-- **Author:** Cursor Agent
-- **Date found:** 2026-07-01
-- **Status:** Fixed
-- **Date fixed:** 2026-07-01
-- **Fix:** Set `url` to GitHub repository.
-- **File:** `metadata.json`
-- **Description:** The `url` field is an empty string. Extension Manager and GNOME Extensions website integration expect a project homepage or repository URL for support and updates.
-- **Repro:** Inspect `metadata.json` or view extension info in Extension Manager.
 
 ### ASUS WMI backlight conflated with Aura RGB detection
 - **Author:** Cursor Agent
