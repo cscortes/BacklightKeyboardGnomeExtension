@@ -35,6 +35,9 @@ GitHub Actions runs the same checks on every push/PR via `.github/workflows/veri
 `tools/ci-verify.sh` (metadata/README version sync, strict schema compile, import hygiene, pack
 + zip layout). Locally: `make ci`.
 
+CI uses a **Fedora 44** container (on a GitHub-hosted Ubuntu runner). Ubuntu 24.04’s libadwaita
+is too old for `PreferencesPage.set_banner()` (needs ≥ 1.7), which the prefs smoke test exercises.
+
 The prefs smoke test builds Settings in a headless window — the same code path that failed
 with `reveal` vs `revealed` and `set_banner()` — **without reloading GNOME Shell**.
 

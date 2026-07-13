@@ -1,6 +1,10 @@
 # Verify / pack the extension as far as CI can without a real GNOME Shell session
 # or keyboard hardware. Runs the same local validate path (lint, gjs syntax,
 # schedule unit tests, prefs Gtk/Adw smoke), then packaging + hygiene checks.
+#
+# Host is ubuntu-latest (GitHub-hosted); the job runs inside a Fedora 44 container
+# so Gtk/Adw match development (PreferencesPage.set_banner needs libadwaita ≥ 1.7;
+# Ubuntu 24.04 ships an older Adw and fails the prefs smoke test).
 name: Verify extension
 
 on:
@@ -19,32 +23,38 @@ concurrency:
 jobs:
   verify:
     name: Lint · test · pack
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
+    container:
+      image: fedora:44
     env:
       # Prefs smoke uses Gio.Settings without a full desktop session.
       GSETTINGS_BACKEND: memory
+      # Headless GTK: no accessibility bus on CI.
+      GTK_A11Y: none
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-          cache: npm
-
       - name: Install system packages
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends \
+          dnf -y install --setopt=install_weak_deps=False \
             gjs \
-            gir1.2-gtk-4.0 \
-            gir1.2-adw-1 \
-            libglib2.0-bin \
-            xvfb \
+            gtk4 \
+            libadwaita \
+            glib2 \
+            xorg-x11-server-Xvfb \
             zip \
             unzip \
-            dbus-x11
+            dbus-daemon \
+            nodejs \
+            npm \
+            git \
+            python3 \
+            which \
+            findutils \
+            gawk
+          gjs --version
+          rpm -q libadwaita gtk4 gjs
 
       - name: Install npm dependencies
         run: npm ci --no-fund --no-audit

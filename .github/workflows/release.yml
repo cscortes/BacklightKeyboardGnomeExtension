@@ -9,8 +9,8 @@
 # Tag must match metadata.json "semantic-version" with a leading v:
 #   semantic-version "0.5.1"  →  git tag v0.5.1 && git push origin v0.5.1
 #
-# Before tagging: bump "version" (integer) + "semantic-version" in metadata.json
-# and the README Version line, then commit on master.
+# Host is ubuntu-latest; the job runs in a Fedora 44 container (same Adw/Gtk stack as
+# development — Ubuntu 24.04's libadwaita is too old for PreferencesPage.set_banner).
 #
 # workflow_dispatch runs the same guards + verify/pack, but does not publish a Release.
 name: Release
@@ -31,15 +31,40 @@ concurrency:
 jobs:
   release:
     name: Pack · GitHub Release
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
+    container:
+      image: fedora:44
     env:
       GSETTINGS_BACKEND: memory
+      GTK_A11Y: none
       GH_TOKEN: ${{ github.token }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      - name: Install system packages
+        run: |
+          dnf -y install --setopt=install_weak_deps=False \
+            gjs \
+            gtk4 \
+            libadwaita \
+            glib2 \
+            xorg-x11-server-Xvfb \
+            zip \
+            unzip \
+            dbus-daemon \
+            nodejs \
+            npm \
+            git \
+            python3 \
+            which \
+            findutils \
+            gawk \
+            gh
+          gjs --version
+          rpm -q libadwaita gtk4 gjs gh
 
       - name: Resolve version from metadata + tag
         id: ver
@@ -89,7 +114,6 @@ jobs:
             exit 1
           fi
 
-          # Refuse if any existing release already used this tag or bare semver name
           if gh release list --limit 100 --json tagName,name \
             --jq ".[] | select(.tagName == \"$TAG\" or .tagName == \"$SEMVER\" or .name == \"$TAG\" or .name == \"$SEMVER\" or .name == \"v$SEMVER\") | .tagName" \
             | grep -q .; then
@@ -98,25 +122,6 @@ jobs:
           fi
 
           echo "No existing release for $TAG — version is new."
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-          cache: npm
-
-      - name: Install system packages
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends \
-            gjs \
-            gir1.2-gtk-4.0 \
-            gir1.2-adw-1 \
-            libglib2.0-bin \
-            xvfb \
-            zip \
-            unzip \
-            dbus-x11
 
       - name: Install npm dependencies
         run: npm ci --no-fund --no-audit
@@ -160,7 +165,6 @@ jobs:
           ASSET="dist/${{ steps.ver.outputs.asset_name }}"
           ZIP="dist/${{ steps.ver.outputs.zip_name }}"
 
-          # Re-check immediately before publish (race with a parallel run)
           if gh release view "$TAG" >/dev/null 2>&1; then
             echo "::error::Release $TAG appeared while this job was running. No assets uploaded; version is unchanged."
             exit 1
@@ -185,7 +189,6 @@ jobs:
           )
           NOTES="$(printf '%s\n' "$NOTES" | sed -e 's/^          //')"
 
-          # Public (not draft, not prerelease) so it shows on the repo Releases page
           gh release create "$TAG" "$ASSET" "$ZIP" \
             --title "v${SEMVER}" \
             --notes "$NOTES" \
