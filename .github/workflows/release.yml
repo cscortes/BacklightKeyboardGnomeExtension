@@ -38,6 +38,8 @@ jobs:
       GSETTINGS_BACKEND: memory
       GTK_A11Y: none
       GH_TOKEN: ${{ github.token }}
+      # Avoid `gh` shelling out to git inside the Fedora container (no usable .git mount).
+      GH_REPO: ${{ github.repository }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -107,14 +109,14 @@ jobs:
           SEMVER="${{ steps.ver.outputs.semver }}"
           BUILD="${{ steps.ver.outputs.build }}"
 
-          if gh release view "$TAG" >/dev/null 2>&1; then
-            URL="$(gh release view "$TAG" --json url -q .url)"
+          if gh release view "$TAG" --repo "$GH_REPO" >/dev/null 2>&1; then
+            URL="$(gh release view "$TAG" --repo "$GH_REPO" --json url -q .url)"
             echo "::error::Version $TAG (semantic-version $SEMVER, GNOME build $BUILD) already has a GitHub Release. Bump both version fields in metadata.json (and README), commit, and tag the new version. No release bundle will be created."
             echo "Existing release: $URL"
             exit 1
           fi
 
-          if gh release list --limit 100 --json tagName,name \
+          if gh release list --repo "$GH_REPO" --limit 100 --json tagName,name \
             --jq ".[] | select(.tagName == \"$TAG\" or .tagName == \"$SEMVER\" or .name == \"$TAG\" or .name == \"$SEMVER\" or .name == \"v$SEMVER\") | .tagName" \
             | grep -q .; then
             echo "::error::A GitHub Release for semantic-version $SEMVER already exists. Bump semantic-version (and integer version) before releasing again. No release bundle will be created."
@@ -164,8 +166,11 @@ jobs:
           BUILD="${{ steps.ver.outputs.build }}"
           ASSET="dist/${{ steps.ver.outputs.asset_name }}"
           ZIP="dist/${{ steps.ver.outputs.zip_name }}"
+          # Tag push SHA — pass explicitly so `gh` does not need a local git repo
+          # (Fedora job container often has no usable .git for discovery).
+          TARGET="${{ github.sha }}"
 
-          if gh release view "$TAG" >/dev/null 2>&1; then
+          if gh release view "$TAG" --repo "$GH_REPO" >/dev/null 2>&1; then
             echo "::error::Release $TAG appeared while this job was running. No assets uploaded; version is unchanged."
             exit 1
           fi
@@ -190,11 +195,13 @@ jobs:
           NOTES="$(printf '%s\n' "$NOTES" | sed -e 's/^          //')"
 
           gh release create "$TAG" "$ASSET" "$ZIP" \
+            --repo "$GH_REPO" \
+            --target "$TARGET" \
             --title "v${SEMVER}" \
             --notes "$NOTES" \
             --latest
 
-          URL="$(gh release view "$TAG" --json url -q .url)"
+          URL="$(gh release view "$TAG" --repo "$GH_REPO" --json url -q .url)"
           echo "Published public release: $URL"
           echo "### Release published" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
