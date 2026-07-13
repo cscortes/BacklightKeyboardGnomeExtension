@@ -86,9 +86,9 @@ older integer build (common on Wayland until you log out/in).
 
 | Location | Shows |
 |---|---|
-| Settings → About | `semantic-version` (e.g. `v0.5.1`) |
+| Settings → About | `semantic-version` (e.g. `v0.5.2`) |
 | Panel menu footer | `semantic-version` |
-| `gnome-extensions info …` | integer `version` (e.g. `16`) |
+| `gnome-extensions info …` | integer `version` (e.g. `17`) |
 | `scripts/install.sh` output | both, after validation |
 
 ## Packaging for `gnome-extensions install` / extensions.gnome.org
@@ -141,8 +141,8 @@ runs.
 
 | Field | Example | Purpose |
 |---|---|---|
-| `"version"` | `16` | **GNOME integer version** — required by GNOME Shell, Extension Manager, and `extensions.gnome.org`. Must increase on every installable build (1, 2, 3 …). |
-| `"semantic-version"` | `"0.5.1"` | **Human-readable semver** — shown in the panel menu, Settings → About, `scripts/install.sh` output, and README.md. |
+| `"version"` | `17` | **GNOME integer version** — required by GNOME Shell, Extension Manager, and `extensions.gnome.org`. Must increase on every installable build (1, 2, 3 …). |
+| `"semantic-version"` | `"0.5.2"` | **Human-readable semver** — shown in the panel menu, Settings → About, `scripts/install.sh` output, and README.md. |
 
 GNOME only understands the integer. The semver string is a project convention for readable release labels.
 
@@ -150,8 +150,8 @@ GNOME only understands the integer. The semver string is a project convention fo
 
 | Change type | `semantic-version` | `"version"` |
 |---|---|---|
-| Bug fix | patch — e.g. `0.5.1` → `0.5.2` | increment by 1 |
-| New feature | minor — e.g. `0.5.1` → `0.6.0` | increment by 1 |
+| Bug fix | patch — e.g. `0.5.2` → `0.5.3` | increment by 1 |
+| New feature | minor — e.g. `0.5.2` → `0.6.0` | increment by 1 |
 | Every installable build | (as above) | **always** increment by 1 |
 
 **What to update when releasing**
@@ -167,8 +167,8 @@ Everything else reads from `extension/metadata.json` at runtime or install time 
 After the version bump is committed on `master`:
 
 ```bash
-git tag v0.5.1          # must match metadata "semantic-version" with a leading v
-git push origin v0.5.1
+git tag v0.5.2          # must match metadata "semantic-version" with a leading v
+git push origin v0.5.2
 ```
 
 That triggers `.github/workflows/release.yml` with these rules:
