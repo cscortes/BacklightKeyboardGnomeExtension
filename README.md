@@ -184,5 +184,5 @@ asusctl installation. Brightness scheduling does not require Aura.
 ---
 
 AI tools helped develop this extension. Initial construction was done with Claude; finishing
-work used GitHub Copilot. On this project Claude was technically stronger, but harder to
-install and use in VS Code.
+work used Cursor. On this project Claude was technically stronger, but harder to
+install and use in VS Code vs Cursor (although it feels a little clumsy too).
