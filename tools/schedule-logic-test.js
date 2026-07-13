@@ -9,7 +9,7 @@ import {
     findOverlapWith,
     nextDefaultEntry,
     planScheduleSave,
-} from '../scheduleLogic.js';
+} from '../extension/scheduleLogic.js';
 
 function assert(cond, msg) {
     if (!cond)

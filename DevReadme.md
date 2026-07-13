@@ -19,16 +19,16 @@ Installs `glib2-devel`, `nodejs`, `npm`, `gjs`, and `mutter-devkit` via `dnf`, t
 
 ```bash
 npm install          # first time only — installs eslint
-./validate-js.sh     # ESLint + syntax check + schedule logic tests + prefs smoke test
+./scripts/validate-js.sh     # ESLint + syntax check + schedule logic tests + prefs smoke test
 ```
 
-`validate-js.sh` runs before every install (`install.sh` calls it as step 1):
+`scripts/validate-js.sh` runs before every install (`scripts/install.sh` calls it as step 1):
 
 | Step | Tool | Catches |
 |---|---|---|
 | ESLint | Node.js | Duplicate `const`, unreachable code, common logic errors |
 | gjs syntax | `gjs -c` | SyntaxErrors without loading GTK |
-| schedule logic tests | `gjs` | Regressions in overlap detection / save planning (`scheduleLogic.js`) |
+| schedule logic tests | `gjs` | Regressions in overlap detection / save planning (`extension/scheduleLogic.js`) |
 | prefs smoke | `gjs` + real Gtk/Adw | Wrong widget properties, invalid parenting, `fillPreferencesWindow` crashes |
 
 GitHub Actions runs the same checks on every push/PR via `.github/workflows/verify.yml`, then
@@ -41,15 +41,15 @@ is too old for `PreferencesPage.set_banner()` (needs ≥ 1.7), which the prefs s
 The prefs smoke test builds Settings in a headless window — the same code path that failed
 with `reveal` vs `revealed` and `set_banner()` — **without reloading GNOME Shell**.
 
-It does **not** replace a quick open of the panel menu after install for `extension.js`
-behaviour (the smoke test only exercises `prefs.js`).
+It does **not** replace a quick open of the panel menu after install for `extension/extension.js`
+behaviour (the smoke test only exercises `extension/prefs.js`).
 
 ## Development loop
 
 There are two deploy paths:
 
-- **`make install`** (or `./install.sh`) — the regular path. Validates, compiles the
-  schema, and copies files into
+- **`make install`** (or `./scripts/install.sh`) — the regular path. Validates, compiles the
+  schema, and copies files from `extension/` into
   `~/.local/share/gnome-shell/extensions/kbd-backlight-scheduler@cscortes.github.io/`. GNOME
   Shell only picks up the change on its next restart (log out/in on Wayland, `Alt+F2 → r`
   on X11) — use this before a real restart, e.g. final checks before a release.
@@ -79,22 +79,22 @@ This picks up `prefs.js` changes (Settings windows are spawned fresh each time),
 `extension.js` changes — the running Shell process keeps its old cached module for that.
 Use `make dev` or a real restart for `extension.js` changes.
 
-`install.sh` validates the on-disk files and warns if GNOME Shell is still running an
+`scripts/install.sh` validates the on-disk files and warns if GNOME Shell is still running an
 older integer build (common on Wayland until you log out/in).
 
 **Where to check the running version**
 
 | Location | Shows |
 |---|---|
-| Settings → About | `semantic-version` (e.g. `v0.5.0`) |
+| Settings → About | `semantic-version` (e.g. `v0.5.1`) |
 | Panel menu footer | `semantic-version` |
-| `gnome-extensions info …` | integer `version` (e.g. `15`) |
-| `install.sh` output | both, after validation |
+| `gnome-extensions info …` | integer `version` (e.g. `16`) |
+| `scripts/install.sh` output | both, after validation |
 
 ## Packaging for `gnome-extensions install` / extensions.gnome.org
 
-`install.sh` (used by `make install` / `make dev`) copies files straight into
-`~/.local/share/gnome-shell/extensions/…` for local dev/personal use — it's not a
+`scripts/install.sh` (used by `make install` / `make dev`) copies files from `extension/`
+straight into `~/.local/share/gnome-shell/extensions/…` for local dev/personal use — it's not a
 distributable package.
 
 To build an actual `.shell-extension.zip` bundle — the format `gnome-extensions install`
@@ -107,17 +107,19 @@ make pack
 This runs `make validate` first, then wraps the official `gnome-extensions pack` tool:
 
 ```bash
-gnome-extensions pack . \
+gnome-extensions pack extension \
     --extra-source=hwDetect.js \
     --extra-source=scheduleLogic.js \
+    --extra-source=../LICENSE \
     -o dist -f
 ```
 
 `extension.js`, `metadata.json`, and `prefs.js` are bundled automatically by `gnome-extensions
 pack`; the `schemas/` folder is auto-detected too. `hwDetect.js` and `scheduleLogic.js` are
 extra local imports that must be listed explicitly with `--extra-source`, or the bundle will
-be missing files GNOME Shell tries to `import` at runtime — if a new top-level `.js` file is
-ever added to the extension, add it here too. `LICENSE` is also included explicitly. The output lands in `dist/` (gitignored).
+be missing files GNOME Shell tries to `import` at runtime — if a new `.js` file is
+ever added under `extension/`, add it here too. `LICENSE` (repo root) is included via
+`--extra-source=../LICENSE`. The output lands in `dist/` (gitignored).
 
 Install the built bundle for a quick local test of the real packaging path:
 
@@ -135,12 +137,12 @@ runs.
 
 ## Versioning
 
-`metadata.json` defines **two** version fields. They are related but not interchangeable.
+`extension/metadata.json` defines **two** version fields. They are related but not interchangeable.
 
 | Field | Example | Purpose |
 |---|---|---|
-| `"version"` | `15` | **GNOME integer version** — required by GNOME Shell, Extension Manager, and `extensions.gnome.org`. Must increase on every installable build (1, 2, 3 …). |
-| `"semantic-version"` | `"0.5.0"` | **Human-readable semver** — shown in the panel menu, Settings → About, `install.sh` output, and README.md. |
+| `"version"` | `16` | **GNOME integer version** — required by GNOME Shell, Extension Manager, and `extensions.gnome.org`. Must increase on every installable build (1, 2, 3 …). |
+| `"semantic-version"` | `"0.5.1"` | **Human-readable semver** — shown in the panel menu, Settings → About, `scripts/install.sh` output, and README.md. |
 
 GNOME only understands the integer. The semver string is a project convention for readable release labels.
 
@@ -148,17 +150,17 @@ GNOME only understands the integer. The semver string is a project convention fo
 
 | Change type | `semantic-version` | `"version"` |
 |---|---|---|
-| Bug fix | patch — e.g. `0.5.0` → `0.5.1` | increment by 1 |
-| New feature | minor — e.g. `0.5.0` → `0.6.0` | increment by 1 |
+| Bug fix | patch — e.g. `0.5.1` → `0.5.2` | increment by 1 |
+| New feature | minor — e.g. `0.5.1` → `0.6.0` | increment by 1 |
 | Every installable build | (as above) | **always** increment by 1 |
 
 **What to update when releasing**
 
-1. **`metadata.json`** — both `"version"` and `"semantic-version"` (source of truth)
+1. **`extension/metadata.json`** — both `"version"` and `"semantic-version"` (source of truth)
 2. **`README.md`** — `Version:` line near the top (keep in sync for readers who don't open metadata)
-3. **`buglist.md`** — optional; note fix/feature version in entries when helpful
+3. **`docs/buglist.md`** — optional; note fix/feature version in entries when helpful
 
-Everything else reads from `metadata.json` at runtime or install time (`extension.js`, `prefs.js`, `install.sh`).
+Everything else reads from `extension/metadata.json` at runtime or install time (`extension.js`, `prefs.js`, `scripts/install.sh`).
 
 **Publish a GitHub Release**
 
@@ -194,7 +196,7 @@ Settings → About shows unexpected detection flags, or when diagnosing a new la
 ### `test-detect-hardware.py` — what the machine exposes
 
 ```bash
-python3 test-detect-hardware.py
+python3 tests/test-detect-hardware.py
 ```
 
 Non-interactive report. Checks, in order:
@@ -221,7 +223,7 @@ If GSD is down, the script exits non-zero and tells you to fix the session befor
 ### `test-backlight.py` — confirm every level changes hardware
 
 ```bash
-python3 test-backlight.py
+python3 tests/test-backlight.py
 ```
 
 Interactive. Reads GSD `Steps`, then for each level `0 … Steps-1`:
@@ -287,8 +289,8 @@ percentage = round(level / (steps - 1) × 100)
 
 ### Suggested debug order
 
-1. `python3 test-detect-hardware.py` — confirm GSD + LED path exist.
-2. `python3 test-backlight.py` — confirm every level is visible on the keyboard.
+1. `python3 tests/test-detect-hardware.py` — confirm GSD + LED path exist.
+2. `python3 tests/test-backlight.py` — confirm every level is visible on the keyboard.
 3. If both pass but the extension misbehaves: check schedules/mode in Settings, then Shell logs (`KbdBacklight`). Nested `make dev` is for UI/logic only; re-test brightness after `make install` + a real Shell restart.
 4. For optional Aura colour/effects, see [docs/asus-color-control-fedora.md](docs/asus-color-control-fedora.md).
 
@@ -313,7 +315,7 @@ GSD exposes brightness as a percentage (0–100). The extension reads the number
 percentage = round(level / (steps - 1) × 100)
 ```
 
-### Period editing model (`prefs.js`)
+### Period editing model (`extension/prefs.js`)
 
 Editing a period's fields is a **staged edit**, not live-apply: typing updates an
 in-memory preview only (conflict banner, this row's own Cancel/OK button state).
@@ -326,35 +328,44 @@ tracks two copies of an entry:
 
 `KbdBacklightPreferences._liveSchedules()` (all rows' `_entry`) drives the live conflict
 preview; `_confirmedSchedules()` (only rows with a non-null `_savedEntry`) is what
-actually gets written to `GSettings`. See `buglist.md` for the history of why this
+actually gets written to `GSettings`. See `docs/buglist.md` for the history of why this
 model replaced a simpler auto-save-on-every-keystroke design.
 
 ## File structure
 
 ```
 GnomeExtension/
-├── Makefile             Dev targets: dev-setup, validate, install, reload, dev
-├── metadata.json        UUID, integer version (GNOME), semantic-version (display)
-├── extension.js         Panel indicator + scheduling engine
-├── prefs.js             Settings UI (General, Schedule, and About tabs)
-├── hwDetect.js          ASUS WMI / Aura hardware detection
-├── scheduleLogic.js     Pure schedule logic: overlap checks, next-default-entry
-├── package.json         npm scripts + ESLint dev dependency manifest (Node.js)
-├── eslint.config.js     Lint rules for extension JS
-├── validate-js.sh       Pre-install validation (ESLint + gjs smoke test)
-├── install.sh           Schema compile + file install (no sudo needed)
+├── README.md            User install / usage
+├── DevReadme.md         Developer notes (this file)
+├── LICENSE
+├── Makefile             Dev targets: dev-setup, validate, install, reload, dev, pack, ci
+├── package.json         npm scripts + ESLint (Node.js)
+├── eslint.config.js
+├── extension/           ← installable extension (gnome-extensions pack root)
+│   ├── metadata.json    UUID, integer version (GNOME), semantic-version (display)
+│   ├── extension.js     Panel indicator + scheduling engine
+│   ├── prefs.js         Settings UI (General, Schedule, and About tabs)
+│   ├── hwDetect.js      ASUS WMI / Aura hardware detection
+│   ├── scheduleLogic.js Pure schedule logic: overlap checks, next-default-entry
+│   └── schemas/
+│       └── org.gnome.shell.extensions.kbd-backlight-scheduler.gschema.xml
+├── scripts/
+│   ├── validate-js.sh   Pre-install validation (ESLint + gjs smoke test)
+│   ├── install.sh       Schema compile + install from extension/ (no sudo)
+│   └── dev-reload.sh    install + disable/enable
 ├── tools/
 │   ├── check-syntax.js       gjs parse-check helper
 │   ├── prefs-smoke.js        Headless Settings UI smoke test
 │   ├── schedule-logic-test.js  Unit tests for scheduleLogic.js
+│   ├── ci-verify.sh          Pack + metadata/hygiene (GitHub Actions)
 │   ├── dev-devkit.js         Nested devkit Shell dev loop (`make dev`)
 │   └── stubs/                Test doubles for prefs smoke test
-├── test-backlight.py    Interactive brightness hardware test
-├── test-detect-hardware.py  Sysfs / GSD / Aura detection report
-├── docs/
-│   └── asus-color-control-fedora.md  Install asusctl for RGB on Fedora
-└── schemas/
-    └── org.gnome.shell.extensions.kbd-backlight-scheduler.gschema.xml
+├── tests/
+│   ├── test-backlight.py           Interactive brightness hardware test
+│   └── test-detect-hardware.py     Sysfs / GSD / Aura detection report
+└── docs/
+    ├── buglist.md                      Bug / design history
+    └── asus-color-control-fedora.md    Install asusctl for RGB on Fedora
 ```
 
 ### GSettings keys
@@ -370,5 +381,5 @@ GnomeExtension/
 
 ## Known issues / history
 
-See **[buglist.md](buglist.md)** for the full history of found/fixed bugs and design
+See **[docs/buglist.md](docs/buglist.md)** for the full history of found/fixed bugs and design
 iterations (e.g. why period defaults and the Cancel/OK edit model look the way they do).

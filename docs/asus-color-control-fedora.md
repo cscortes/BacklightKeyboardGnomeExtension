@@ -13,7 +13,7 @@ This guide explains how to install **Aura RGB keyboard color control** on Fedora
 | Per-period **RGB color** (Static, Breathe, Strobe, Rainbow) | **Yes** | Schedule tab → Aura Effect + Color picker |
 
 If you only want scheduled **brightness levels**, you do **not** need asusctl. Run
-`python3 test-detect-hardware.py` to confirm GSD and `asus::kbd_backlight` are working.
+`python3 tests/test-detect-hardware.py` to confirm GSD and `asus::kbd_backlight` are working.
 
 Install asusctl when you want **colored** keyboard lighting tied to schedule periods.
 
@@ -145,7 +145,7 @@ From this repository:
 
 ```bash
 cd ~/Code/GnomeExtension
-python3 test-detect-hardware.py
+python3 tests/test-detect-hardware.py
 ```
 
 Look for:
@@ -169,7 +169,7 @@ After asusctl is installed and `asusd` is running:
 
 ```bash
 cd ~/Code/GnomeExtension
-./install.sh
+./scripts/install.sh
 gnome-extensions disable kbd-backlight-scheduler@cscortes.github.io
 gnome-extensions enable kbd-backlight-scheduler@cscortes.github.io
 ```

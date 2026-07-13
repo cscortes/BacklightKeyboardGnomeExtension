@@ -3,9 +3,12 @@
 A GNOME Shell extension that automatically controls keyboard backlight brightness on a time-of-day schedule.
 
 Tested on Fedora 44 with an ASUS laptop, GNOME Shell 50.2. Compatible with GNOME 45–50.
-Version: **0.5.0** · License: **GPL-2.0-or-later**
+Version: **0.5.1** · License: **GPL-2.0-or-later**
 
 > Contributing or modifying the code? See **[DevReadme.md](DevReadme.md)** instead.
+
+Installable extension sources live under **`extension/`** (what GNOME Shell loads). Repo
+tooling is in `scripts/`, `tools/`, and `tests/` — see DevReadme for the full layout.
 
 ---
 
@@ -101,14 +104,14 @@ at all) is a fully valid setup — the backlight just stays off.
 ```bash
 cd ~/Code/GnomeExtension
 make dev-setup    # installs dnf + npm deps and runs validation
-make install      # or: make validate && ./install.sh
+make install      # or: make validate && ./scripts/install.sh
 ```
 
 `make dev-setup` installs `glib2-devel`, `nodejs`, `npm`, and `gjs` via `dnf`, then runs `npm install`. Requires `sudo` for system packages.
 
-The installer compiles the GSettings schema and copies all files to
+The installer compiles the GSettings schema and copies files from `extension/` to
 `~/.local/share/gnome-shell/extensions/kbd-backlight-scheduler@cscortes.github.io/`
-(extension UUID is defined in `metadata.json`; install scripts read it from there).
+(extension UUID is defined in `extension/metadata.json`; install scripts read it from there).
 No sudo required.
 
 ### Reload GNOME Shell

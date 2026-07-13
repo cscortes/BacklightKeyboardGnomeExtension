@@ -1,5 +1,5 @@
 # Keyboard Backlight Scheduler — development targets
-UUID := $(shell grep -Po '(?<="uuid": ")[^"]+' metadata.json)
+UUID := $(shell grep -Po '(?<="uuid": ")[^"]+' extension/metadata.json)
 
 .PHONY: help dev-setup validate install reload dev pack ci
 
@@ -19,28 +19,30 @@ help:
 dev-setup:
 	sudo dnf install -y glib2-devel nodejs npm gjs mutter-devkit
 	npm install --no-fund --no-audit
-	chmod +x install.sh validate-js.sh dev-reload.sh tools/prefs-smoke.js tools/check-syntax.js tools/schedule-logic-test.js tools/dev-devkit.js
+	chmod +x scripts/install.sh scripts/validate-js.sh scripts/dev-reload.sh \
+		tools/prefs-smoke.js tools/check-syntax.js tools/schedule-logic-test.js \
+		tools/dev-devkit.js tools/ci-verify.sh
 
 validate:
-	./validate-js.sh
+	./scripts/validate-js.sh
 
 ci: validate
 	./tools/ci-verify.sh
 
 install:
-	./install.sh
+	./scripts/install.sh
 
 reload:
-	./dev-reload.sh
+	./scripts/dev-reload.sh
 
 dev:
 	npm run dev
 
 pack: validate
 	mkdir -p dist
-	gnome-extensions pack . \
+	gnome-extensions pack extension \
 		--extra-source=hwDetect.js \
 		--extra-source=scheduleLogic.js \
-		--extra-source=LICENSE \
+		--extra-source=../LICENSE \
 		-o dist -f
 	@echo "Built dist/$(UUID).shell-extension.zip"

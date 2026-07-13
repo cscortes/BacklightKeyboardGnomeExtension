@@ -5,7 +5,7 @@ Detect ASUS keyboard backlight hardware and related control paths.
 
 Run from a normal GNOME session (outside any sandbox):
 
-    python3 test-detect-hardware.py
+    python3 tests/test-detect-hardware.py
 
 Checks:
   - sysfs LED devices (asus::kbd_backlight, etc.)

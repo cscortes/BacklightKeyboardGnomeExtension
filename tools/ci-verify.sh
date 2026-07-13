@@ -13,6 +13,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
+EXT="$ROOT/extension"
 
 SKIP_PACK=0
 for arg in "$@"; do
@@ -41,7 +42,7 @@ python3 - <<'PY'
 import json, re, sys
 from pathlib import Path
 
-meta = json.loads(Path("metadata.json").read_text())
+meta = json.loads(Path("extension/metadata.json").read_text())
 errors = []
 
 def req(key):
@@ -92,14 +93,14 @@ ok "metadata + README version sync"
 
 # ── 2. GSettings schema ─────────────────────────────────────────────────────
 echo "[2/5] glib-compile-schemas --strict…"
-command -v glib-compile-schemas >/dev/null || fail "glib-compile-schemas not found (libglib2.0-bin)"
-SCHEMA_XML="schemas/org.gnome.shell.extensions.kbd-backlight-scheduler.gschema.xml"
+command -v glib-compile-schemas >/dev/null || fail "glib-compile-schemas not found (libglib2.0-bin / glib2)"
+SCHEMA_XML="extension/schemas/org.gnome.shell.extensions.kbd-backlight-scheduler.gschema.xml"
 [[ -f "$SCHEMA_XML" ]] || fail "missing $SCHEMA_XML"
 grep -q 'id="org.gnome.shell.extensions.kbd-backlight-scheduler"' "$SCHEMA_XML" \
     || fail "schema id must be org.gnome.shell.extensions.kbd-backlight-scheduler"
 grep -q 'path="/org/gnome/shell/extensions/kbd-backlight-scheduler/"' "$SCHEMA_XML" \
     || fail "schema path must be /org/gnome/shell/extensions/kbd-backlight-scheduler/"
-glib-compile-schemas --strict schemas/
+glib-compile-schemas --strict extension/schemas/
 ok "schema compiles"
 
 # ── 3. Static hygiene (EGO-ish) ──────────────────────────────────────────────
@@ -109,22 +110,22 @@ import re, sys
 from pathlib import Path
 
 errors = []
+ext_dir = Path("extension")
 
-ext = Path("extension.js").read_text()
-prefs = Path("prefs.js").read_text()
+ext = (ext_dir / "extension.js").read_text()
+prefs = (ext_dir / "prefs.js").read_text()
 
-# GTK stack must stay out of the Shell process
 for bad in ("gi://Gtk", "gi://Gdk", "gi://Adw"):
     if re.search(rf"from ['\"]{re.escape(bad)}", ext):
-        errors.append(f"extension.js must not import {bad}")
+        errors.append(f"extension/extension.js must not import {bad}")
 
-# Shell / Clutter stack must stay out of prefs
 for bad in ("gi://Clutter", "gi://Meta", "gi://St", "gi://Shell"):
     if re.search(rf"from ['\"]{re.escape(bad)}", prefs):
-        errors.append(f"prefs.js must not import {bad}")
+        errors.append(f"extension/prefs.js must not import {bad}")
 
-for path in ("extension.js", "prefs.js", "hwDetect.js", "scheduleLogic.js"):
-    text = Path(path).read_text()
+for rel in ("extension.js", "prefs.js", "hwDetect.js", "scheduleLogic.js"):
+    path = ext_dir / rel
+    text = path.read_text()
     if "spawn_command_line_sync" in text:
         errors.append(f"{path}: spawn_command_line_sync is discouraged (use async Gio.Subprocess)")
     if re.search(r"\bByteArray\b", text):
@@ -134,15 +135,14 @@ for path in ("extension.js", "prefs.js", "hwDetect.js", "scheduleLogic.js"):
     if re.search(r"\bimports\.mainloop\b|\bMainloop\.", text):
         errors.append(f"{path}: Mainloop is deprecated")
 
-# Required top-level sources for pack
 for req in (
-    "extension.js",
-    "prefs.js",
-    "metadata.json",
-    "hwDetect.js",
-    "scheduleLogic.js",
+    "extension/extension.js",
+    "extension/prefs.js",
+    "extension/metadata.json",
+    "extension/hwDetect.js",
+    "extension/scheduleLogic.js",
     "LICENSE",
-    "schemas/org.gnome.shell.extensions.kbd-backlight-scheduler.gschema.xml",
+    "extension/schemas/org.gnome.shell.extensions.kbd-backlight-scheduler.gschema.xml",
 ):
     if not Path(req).is_file():
         errors.append(f"missing required file: {req}")
@@ -163,25 +163,32 @@ fi
 
 # ── 4. Pack zip ──────────────────────────────────────────────────────────────
 echo "[4/5] pack extension zip…"
-UUID="$(python3 -c 'import json; print(json.load(open("metadata.json"))["uuid"])')"
+UUID="$(python3 -c 'import json; print(json.load(open("extension/metadata.json"))["uuid"])')"
 mkdir -p dist
 ZIP="dist/${UUID}.shell-extension.zip"
 rm -f "$ZIP"
 
 if command -v gnome-extensions >/dev/null 2>&1; then
-    gnome-extensions pack . \
+    gnome-extensions pack extension \
         --extra-source=hwDetect.js \
         --extra-source=scheduleLogic.js \
-        --extra-source=LICENSE \
+        --extra-source=../LICENSE \
         -o dist -f
     [[ -f "$ZIP" ]] || fail "gnome-extensions pack did not produce $ZIP"
     ok "gnome-extensions pack → $ZIP"
 else
-    # Fallback matching Makefile pack contents (no gnome-shell package needed)
-    zip -q -r "$ZIP" \
-        metadata.json extension.js prefs.js \
-        hwDetect.js scheduleLogic.js LICENSE \
-        schemas/org.gnome.shell.extensions.kbd-backlight-scheduler.gschema.xml
+    # Fallback matching Makefile pack contents (zip entries at archive root)
+    (
+        cd extension
+        zip -q -r "../$ZIP" \
+            metadata.json extension.js prefs.js \
+            hwDetect.js scheduleLogic.js \
+            schemas/org.gnome.shell.extensions.kbd-backlight-scheduler.gschema.xml
+    )
+    (
+        cd "$ROOT"
+        zip -q -u "$ZIP" LICENSE
+    )
     ok "zip fallback → $ZIP (install gnome-shell for official pack tool)"
 fi
 
@@ -203,19 +210,15 @@ for f in "${need_top[@]}"; do
     grep -Fxq "$f" <<<"$LIST" || fail "zip missing top-level entry: $f"
 done
 
-# metadata.json must not be nested under a directory
 grep -E '^[^/]+/metadata\.json$' <<<"$LIST" >/dev/null \
     && fail "metadata.json must be at zip root, not inside a folder"
 
-# No compiled schema in the upload (EGO/install compiles on target)
 if grep -E 'gschemas\.compiled$' <<<"$LIST" >/dev/null; then
     fail "zip must not include gschemas.compiled (compile on install)"
 fi
 
-# Keep junk out of the distributable
 for bad in node_modules/ build/ .git/ package.json package-lock.json \
-           validate-js.sh install.sh Makefile tools/ test-backlight.py \
-           test-detect-hardware.py; do
+           scripts/ tools/ tests/ docs/ Makefile README.md DevReadme.md; do
     if grep -E "^${bad}" <<<"$LIST" >/dev/null; then
         fail "zip must not include development path: $bad"
     fi

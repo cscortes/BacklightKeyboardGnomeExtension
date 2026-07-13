@@ -4,8 +4,8 @@
   "type": "module",
   "description": "Dev tooling for Keyboard Backlight Scheduler GNOME extension",
   "scripts": {
-    "lint": "eslint extension.js prefs.js hwDetect.js scheduleLogic.js tools/*.js",
-    "validate": "./validate-js.sh",
+    "lint": "eslint extension/*.js tools/*.js",
+    "validate": "./scripts/validate-js.sh",
     "dev": "node tools/dev-devkit.js"
   },
   "devDependencies": {

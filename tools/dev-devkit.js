@@ -31,14 +31,15 @@ import {fileURLToPath} from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
+const EXT = path.join(ROOT, 'extension');
 const DEVKIT_BIN = '/usr/libexec/mutter-devkit';
-const metadata = JSON.parse(fs.readFileSync(path.join(ROOT, 'metadata.json'), 'utf8'));
+const metadata = JSON.parse(fs.readFileSync(path.join(EXT, 'metadata.json'), 'utf8'));
 const UUID = metadata.uuid;
 
 const WATCH_TARGETS = [
     'extension.js', 'prefs.js', 'hwDetect.js', 'scheduleLogic.js',
     'metadata.json', 'schemas',
-].map(f => path.join(ROOT, f));
+].map(f => path.join(EXT, f));
 
 let nested = null;
 let restarting = false;
@@ -63,7 +64,7 @@ function checkDevkit() {
 
 function deploy() {
     log('Deploying latest code (validate + install)…');
-    const result = spawnSync(path.join(ROOT, 'install.sh'), [], {
+    const result = spawnSync(path.join(ROOT, 'scripts', 'install.sh'), [], {
         cwd: ROOT,
         stdio: 'inherit',
     });
@@ -120,7 +121,7 @@ async function restart() {
         return;
     }
     restarting = true;
-    // install.sh writes schemas/gschemas.compiled back into the repo, which
+    // install.sh writes extension/schemas/gschemas.compiled back into the repo, which
     // is itself a watched path — ignore filesystem events we caused ourselves.
     suppressWatch = true;
     killNested();

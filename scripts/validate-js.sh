@@ -8,7 +8,9 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-cd "$SCRIPT_DIR"
+ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+EXT="$ROOT/extension"
+cd "$ROOT"
 
 fail() { echo "validate: FAIL: $1" >&2; exit 1; }
 
@@ -28,24 +30,24 @@ echo "      OK"
 
 # ── 2. Syntax compile ───────────────────────────────────────────────────────
 echo "[2/4] gjs syntax check…"
-gjs -m "$SCRIPT_DIR/hwDetect.js" >/dev/null 2>&1 \
-    || fail "hwDetect.js — run: gjs -m hwDetect.js"
-gjs -m "$SCRIPT_DIR/tools/check-syntax.js" \
-    "$SCRIPT_DIR/extension.js" \
-    "$SCRIPT_DIR/prefs.js" \
-    "$SCRIPT_DIR/scheduleLogic.js" \
+gjs -m "$EXT/hwDetect.js" >/dev/null 2>&1 \
+    || fail "hwDetect.js — run: gjs -m extension/hwDetect.js"
+gjs -m "$ROOT/tools/check-syntax.js" \
+    "$EXT/extension.js" \
+    "$EXT/prefs.js" \
+    "$EXT/scheduleLogic.js" \
     || fail "syntax check — see errors above"
 echo "      OK"
 
 # ── 3. Schedule logic tests ─────────────────────────────────────────────────
 echo "[3/4] schedule logic tests…"
-gjs -m "$SCRIPT_DIR/tools/schedule-logic-test.js" \
+gjs -m "$ROOT/tools/schedule-logic-test.js" \
     || fail "schedule logic tests — see errors above"
 echo "      OK"
 
 # ── 4. Prefs smoke test ─────────────────────────────────────────────────────
 echo "[4/4] prefs smoke test (Gtk/Adw)…"
-gjs -m "$SCRIPT_DIR/tools/prefs-smoke.js" \
+gjs -m "$ROOT/tools/prefs-smoke.js" \
     || fail "prefs smoke test — see errors above"
 echo "      OK"
 

@@ -60,7 +60,7 @@ jobs:
         run: npm ci --no-fund --no-audit
 
       - name: Validate (ESLint, gjs syntax, schedule tests, prefs smoke)
-        run: xvfb-run -a dbus-run-session -- ./validate-js.sh
+        run: xvfb-run -a dbus-run-session -- ./scripts/validate-js.sh
 
       - name: Packaging + metadata + hygiene
         run: |

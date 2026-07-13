@@ -27,6 +27,6 @@ export default [
         },
     },
     {
-        ignores: ['node_modules/**', 'build/**', 'schemas/gschemas.compiled'],
+        ignores: ['node_modules/**', 'build/**', 'dist/**', 'extension/schemas/gschemas.compiled'],
     },
 ];

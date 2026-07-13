@@ -70,9 +70,9 @@ jobs:
         id: ver
         run: |
           set -euo pipefail
-          SEMVER="$(python3 -c 'import json; print(json.load(open("metadata.json"))["semantic-version"])')"
-          BUILD="$(python3 -c 'import json; print(json.load(open("metadata.json"))["version"])')"
-          UUID="$(python3 -c 'import json; print(json.load(open("metadata.json"))["uuid"])')"
+          SEMVER="$(python3 -c 'import json; print(json.load(open("extension/metadata.json"))["semantic-version"])')"
+          BUILD="$(python3 -c 'import json; print(json.load(open("extension/metadata.json"))["version"])')"
+          UUID="$(python3 -c 'import json; print(json.load(open("extension/metadata.json"))["uuid"])')"
           EXPECTED_TAG="v${SEMVER}"
 
           if [[ "${{ github.ref_type }}" == "tag" ]]; then
@@ -129,7 +129,7 @@ jobs:
       - name: Verify (must pass or no release bundle)
         run: |
           set -euo pipefail
-          if ! xvfb-run -a dbus-run-session -- ./validate-js.sh; then
+          if ! xvfb-run -a dbus-run-session -- ./scripts/validate-js.sh; then
             echo "::error::Verification failed (lint / gjs syntax / schedule tests / prefs smoke). No release zip will be built or published."
             exit 1
           fi

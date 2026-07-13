@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# bump metadata.json first, then:
+# bump extension/metadata.json first, then:
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-UUID="$(grep -Po '(?<="uuid": ")[^"]+' "$SCRIPT_DIR/metadata.json")"
+ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+UUID="$(grep -Po '(?<="uuid": ")[^"]+' "$ROOT/extension/metadata.json")"
 
 "$SCRIPT_DIR/install.sh"
 gnome-extensions disable "$UUID"
