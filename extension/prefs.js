@@ -1,8 +1,8 @@
 import {ExtensionPreferences} from 'resource:///org/gnome/Shell/Extensions/js/extensions/prefs.js';
-import Adw from 'gi://Adw';
-import Gtk from 'gi://Gtk';
-import Gdk from 'gi://Gdk';
-import GObject from 'gi://GObject';
+import Gtk from 'gi://Gtk?version=4.0';
+import Gdk from 'gi://Gdk?version=4.0';
+import GObject from 'gi://GObject?version=2.0';
+import Adw from 'gi://Adw?version=1';
 
 import {
     detectAsusKbdLed,
@@ -364,7 +364,7 @@ export default class KbdBacklightPreferences extends ExtensionPreferences {
         const settings = this.getSettings();
 
         // Re-detect hardware when Settings opens (may differ from last extension enable).
-        const asusKbd       = (await detectAsusKbdLed()) || detectAsusNbWmi();
+        const asusKbd       = detectAsusKbdLed() || detectAsusNbWmi();
         const auraAvailable = detectAuraAvailable();
         settings.set_boolean('asus-kbd-detected', asusKbd);
         settings.set_boolean('aura-available', auraAvailable);

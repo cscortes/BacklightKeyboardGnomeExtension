@@ -118,7 +118,7 @@ def test_metadata_ego_fields() -> list[str]:
 
 
 def test_no_blocking_sysfs_reads() -> list[str]:
-    """Prior EGO feedback: no sync load_contents / subprocess cat for file reads."""
+    """Prior EGO feedback: no sync load_contents / subprocess cat/test for files."""
     errors = []
     hw = (EXT / "hwDetect.js").read_text()
     if re.search(r"\.load_contents\s*\(\s*null\s*\)", hw):
@@ -130,9 +130,40 @@ def test_no_blocking_sysfs_reads() -> list[str]:
         errors.append(
             "extension/hwDetect.js: must not spawn subprocess to read file content"
         )
+    if re.search(r"Subprocess\.new\s*\(\s*\[[^\]]*['\"]test['\"]", hw, re.S):
+        errors.append(
+            "extension/hwDetect.js: use Gio.File.query_exists / query_file_type, "
+            "not a `test` subprocess"
+        )
     if "load_contents_async" not in hw:
         errors.append(
             "extension/hwDetect.js: expected Gio.File.load_contents_async for sysfs reads"
+        )
+    if re.search(r"communicate_utf8\s*\(\s*null\s*,\s*null\s*\)", hw):
+        errors.append(
+            "extension/hwDetect.js: use communicate_utf8_async for asusctl probing "
+            "(blocking communicate_utf8 stalls the main loop)"
+        )
+    if "ListNames" in hw:
+        errors.append(
+            "extension/hwDetect.js: use D-Bus NameHasOwner for the Aura daemon, "
+            "not ListNames (expensive on a timer)"
+        )
+    return errors
+
+
+def test_extension_no_blocking_subprocess_io() -> list[str]:
+    """Aura apply must not use sync communicate_utf8 on the Shell main loop."""
+    errors = []
+    text = (EXT / "extension.js").read_text()
+    if re.search(r"communicate_utf8\s*\(\s*null\s*,\s*null\s*\)", text):
+        errors.append(
+            "extension/extension.js: use communicate_utf8_async for asusctl I/O"
+        )
+    if "_lastAuraKey" not in text:
+        errors.append(
+            "extension/extension.js: coalesce Aura applies with _lastAuraKey "
+            "(do not spawn asusctl every timer tick)"
         )
     return errors
 
@@ -150,6 +181,33 @@ def test_get_settings_no_schema_arg() -> list[str]:
     return errors
 
 
+def test_enable_lifecycle() -> list[str]:
+    """enable() must be synchronous; disable must clear enable-created sources."""
+    errors = []
+    text = (EXT / "extension.js").read_text()
+    if re.search(r"\basync\s+enable\s*\(", text):
+        errors.append(
+            "extension/extension.js: enable() must not be async — Shell does not "
+            "await it, so disable() can race mid-enable"
+        )
+    # Main-loop sources stored on this._*Id from timeout_add / idle_add.
+    for name in re.findall(
+        r"this\.(_[A-Za-z0-9]*Id)\s*=\s*GLib\.(?:timeout_add(?:_seconds)?|idle_add)\s*\(",
+        text,
+    ):
+        if not re.search(rf"GLib\.source_remove\(\s*this\.{re.escape(name)}\s*\)", text):
+            errors.append(
+                f"extension/extension.js: this.{name} from GLib.*_add has no "
+                f"matching GLib.source_remove(this.{name}) in disable()"
+            )
+    if "this._enabled = true" not in text or "this._enabled = false" not in text:
+        errors.append(
+            "extension/extension.js: set this._enabled in enable()/disable() so "
+            "async callbacks can no-op after disable"
+        )
+    return errors
+
+
 def main() -> None:
     print("=== EGO hygiene tests ===")
     suites = [
@@ -157,8 +215,10 @@ def main() -> None:
         ("EGO-L-003 signal disconnect", test_signal_disconnect),
         ("EGO-L-006 prefs close-request", test_prefs_close_request_cleanup),
         ("metadata version-name / settings-schema", test_metadata_ego_fields),
-        ("async sysfs reads (no cat/subprocess)", test_no_blocking_sysfs_reads),
+        ("async/non-blocking file & CLI probes", test_no_blocking_sysfs_reads),
+        ("Aura coalesce / async subprocess I/O", test_extension_no_blocking_subprocess_io),
         ("getSettings() without schema arg", test_get_settings_no_schema_arg),
+        ("enable()/disable() lifecycle", test_enable_lifecycle),
     ]
 
     errors: list[str] = []

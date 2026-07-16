@@ -3,7 +3,7 @@
 A GNOME Shell extension that automatically controls keyboard backlight brightness on a time-of-day schedule.
 
 Tested on Fedora 44 with an ASUS laptop, GNOME Shell 50.2. Compatible with GNOME 45–50.
-Version: **0.5.4** · License: **GPL-2.0-or-later**
+Version: **0.5.5** · License: **GPL-2.0-or-later**
 
 > Contributing or modifying the code? See **[DevReadme.md](DevReadme.md)** instead.
 
@@ -36,7 +36,7 @@ Schedule Periods
 ▶  6:00 PM – 11:45 PM    ●●●       ← active (highlighted)
    12:05 AM – 9:00 AM    ●
 ──────────────────────────────────────────
-Test Override  (auto-restores at next schedule tick)
+Test Override  (click ↺ Resume to restore schedule)
   [Off]  [●]  [●●]  [●●●]
   ↺  Resume Schedule Now
 ──────────────────────────────────────────
@@ -47,7 +47,7 @@ Open Settings…
 
 - **Schedule Periods** — shows all configured periods; the active one is highlighted in yellow with `▶`
 - **Next change** — counts down to the next brightness transition (Scheduled mode only)
-- **Test Override** — sets hardware brightness immediately without touching the mode or schedule; the scheduler restores the correct level at the next tick, or click **↺ Resume Schedule Now**
+- **Test Override** — sets hardware brightness immediately without touching the mode or schedule; stays in effect until you click **↺ Resume Schedule Now** (or switch mode)
 - **Mode row** — switch modes without opening Settings
 
 ---

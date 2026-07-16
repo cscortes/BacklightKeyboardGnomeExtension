@@ -1,0 +1,16 @@
+/* Panel menu emphasis — avoid hard-coded RGBA inline styles for a11y/themeability. */
+
+.kbd-backlight-active {
+    font-weight: bold;
+    color: #ffd250;
+}
+
+.kbd-backlight-warn {
+    color: #ff7850;
+}
+
+/* Selected test / mode toggles (St.Button toggle_mode + checked). */
+.popup-menu-item .button:checked {
+    background-color: rgba(255, 255, 255, 0.25);
+    border-radius: 4px;
+}

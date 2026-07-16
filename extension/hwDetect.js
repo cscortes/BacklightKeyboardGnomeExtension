@@ -2,32 +2,33 @@ import GLib from 'gi://GLib';
 import Gio from 'gi://Gio';
 
 Gio._promisify(Gio.File.prototype, 'load_contents_async', 'load_contents_finish');
+Gio._promisify(Gio.Subprocess.prototype, 'communicate_utf8_async', 'communicate_utf8_finish');
 
 const ASUS_KBD_LED = '/sys/class/leds/asus::kbd_backlight';
+const ASUS_NB_WMI = '/sys/devices/platform/asus-nb-wmi';
 
-function subprocessOk(argv) {
+function pathExists(path) {
+    return Gio.File.new_for_path(path).query_exists(null);
+}
+
+function pathIsDirectory(path) {
     try {
-        const proc = Gio.Subprocess.new(argv, Gio.SubprocessFlags.NONE);
-        proc.wait_check(null);
-        return true;
+        return Gio.File.new_for_path(path).query_file_type(
+            Gio.FileQueryInfoFlags.NONE, null
+        ) === Gio.FileType.DIRECTORY;
     } catch (_) {
         return false;
     }
 }
 
-/** ASUS WMI white keyboard backlight LED (asus-nb-wmi). */
-export async function detectAsusKbdLed() {
-    // Prefer reading max_brightness - works in GJS and matches test-detect-hardware.py.
-    if (await readSysfsInt(`${ASUS_KBD_LED}/max_brightness`) >= 0)
-        return true;
-    if (Gio.File.new_for_path(ASUS_KBD_LED).query_exists(null))
-        return true;
-    return subprocessOk(['test', '-r', `${ASUS_KBD_LED}/max_brightness`]);
+/** ASUS WMI white keyboard backlight LED (asus-nb-wmi). Sync-safe for enable(). */
+export function detectAsusKbdLed() {
+    return pathExists(ASUS_KBD_LED) || pathExists(`${ASUS_KBD_LED}/max_brightness`);
 }
 
 /** ASUS platform driver (companion check for WMI laptops). */
 export function detectAsusNbWmi() {
-    return subprocessOk(['test', '-d', '/sys/devices/platform/asus-nb-wmi']);
+    return pathIsDirectory(ASUS_NB_WMI);
 }
 
 /** Reads an integer from a sysfs file without blocking the compositor's main loop. */
@@ -46,11 +47,12 @@ export function detectAuraDaemon() {
     try {
         const result = Gio.DBus.system.call_sync(
             'org.freedesktop.DBus', '/',
-            'org.freedesktop.DBus', 'ListNames',
-            null, null, Gio.DBusCallFlags.NONE, -1, null
+            'org.freedesktop.DBus', 'NameHasOwner',
+            new GLib.Variant('(s)', ['org.asuslinux.Daemon']),
+            GLib.VariantType.new('(b)'),
+            Gio.DBusCallFlags.NONE, -1, null
         );
-        const names = result.get_child_value(0).recursiveUnpack();
-        return Array.isArray(names) && names.includes('org.asuslinux.Daemon');
+        return result.get_child_value(0).unpack();
     } catch (_) {
         return false;
     }
@@ -65,38 +67,35 @@ export function detectAuraAvailable() {
     return detectAuraDaemon() || detectAsusctlBinary();
 }
 
-export function detectAsusctlColourFlag() {
+async function _asusctlAuraHelp() {
     if (!detectAsusctlBinary())
-        return '--colour';
+        return '';
     try {
         const proc = Gio.Subprocess.new(
             ['asusctl', 'aura', '--help'],
             Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_MERGE
         );
-        const [, stdout] = proc.communicate_utf8(null, null);
-        const help = stdout ?? '';
-        if (help.includes('--colour'))
-            return '--colour';
-        if (help.includes('--color'))
-            return '--color';
-    } catch (_) {}
+        const [, stdout] = await proc.communicate_utf8_async(null, null);
+        return stdout ?? '';
+    } catch (_) {
+        return '';
+    }
+}
+
+export async function detectAsusctlColourFlag() {
+    const help = await _asusctlAuraHelp();
+    if (help.includes('--colour'))
+        return '--colour';
+    if (help.includes('--color'))
+        return '--color';
     return '--colour';
 }
 
 /** 'v6' = asusctl 6.x subcommands; 'legacy' = older `-m` flag style. */
-export function detectAsusctlCliStyle() {
-    if (!detectAsusctlBinary())
-        return 'legacy';
-    try {
-        const proc = Gio.Subprocess.new(
-            ['asusctl', 'aura', '--help'],
-            Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_MERGE
-        );
-        const [, stdout] = proc.communicate_utf8(null, null);
-        const help = stdout ?? '';
-        if (help.includes('effect            led mode') || help.includes('aura effect'))
-            return 'v6';
-    } catch (_) {}
+export async function detectAsusctlCliStyle() {
+    const help = await _asusctlAuraHelp();
+    if (help.includes('effect            led mode') || help.includes('aura effect'))
+        return 'v6';
     return 'legacy';
 }
 
@@ -125,7 +124,7 @@ export function buildAuraArgv(auraMode, hexColor, style, colourFlag = '--colour'
  * Human-readable hardware status for Settings / panel UI.
  */
 export async function describeHardware({gsdOk, gsdSteps, maxBrightness}) {
-    const asusLed    = await detectAsusKbdLed();
+    const asusLed    = detectAsusKbdLed();
     const asusWmi    = detectAsusNbWmi();
     const sysfsMax   = asusLed ? await readSysfsInt(`${ASUS_KBD_LED}/max_brightness`) : -1;
     const auraDaemon = detectAuraDaemon();

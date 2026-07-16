@@ -2,8 +2,8 @@
   "uuid": "kbd-backlight-scheduler@cscortes.github.io",
   "name": "Keyboard Backlight Scheduler",
   "description": "Schedule keyboard backlight brightness with multiple time periods. Control your ASUS keyboard backlight automatically based on time of day.",
-  "version": 19,
-  "version-name": "0.5.4",
+  "version": 20,
+  "version-name": "0.5.5",
   "shell-version": ["45", "46", "47", "48", "49", "50"],
   "url": "https://github.com/cscortes/BacklightKeyboardGnomeExtension",
   "settings-schema": "org.gnome.shell.extensions.kbd-backlight-scheduler"

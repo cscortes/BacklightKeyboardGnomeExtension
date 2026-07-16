@@ -227,3 +227,129 @@ Severity tiers: **High** → **Midhigh** → **Medium** → **Midlow** → **Low
 - **File:** `prefs.js` — `ScheduleRow._init()`
 - **Description:** Two consecutive `createAuraWidgets()` calls declared `auraModeRow` and `colorRow` twice in the same block, causing `SyntaxError: redeclaration of const auraModeRow` and preventing Settings from opening.
 - **Repro:** Open extension Settings after v0.3.2 overlap UX changes.
+
+---
+
+## GJS guide / EGO follow-ups (2026-07-15)
+
+Cross-check against https://gjs.guide/extensions/ and the review guidelines. Severity here maps guide priority (Must / Should / Nice) onto the project tiers.
+
+### Aura spawned on every 60s timer tick (no coalesce)
+- **Author:** Cursor Agent
+- **Date found:** 2026-07-15
+- **Status:** Fixed
+- **Date fixed:** 2026-07-15
+- **Priority:** Must (quality) / Midhigh
+- **Fix:** `_auraApply()` tracks `_lastAuraKey` (mode + colour + CLI style) and skips spawning when unchanged; clears the key on failure so retry is possible.
+- **File:** `extension.js` — `_auraApply()`
+- **Description:** With Aura available, `_applyNow()` always called `_auraApply()`, so the 60s timer re-ran `asusctl` even when effect/colour were unchanged. Guide: external processes must be spawned carefully.
+- **Repro:** Enable Always On + Aura; watch processes / journal for repeated identical `asusctl` invocations each minute.
+
+### Sync `communicate_utf8` on Shell main loop (Aura error path)
+- **Author:** Cursor Agent
+- **Date found:** 2026-07-15
+- **Status:** Fixed
+- **Date fixed:** 2026-07-15
+- **Priority:** Should (EGO-ish) / Midhigh
+- **Fix:** `_auraApply()` uses `communicate_utf8_async` / `communicate_utf8_finish` and reads stderr without blocking `wait` + sync communicate.
+- **File:** `extension.js` — `_auraApply()`
+- **Description:** After `wait_async`, the error path called `communicate_utf8(null, null)`, blocking the compositor. Same class of issue as prior EGO file-read feedback.
+- **Repro:** Force an `asusctl` failure; observe sync communicate on the Shell process.
+
+### Sync D-Bus `ListNames` on every `_applyNow` for Aura daemon
+- **Author:** Cursor Agent
+- **Date found:** 2026-07-15
+- **Status:** Fixed
+- **Date fixed:** 2026-07-15
+- **Priority:** Should / Midhigh
+- **Fix:** `detectAuraDaemon()` uses `NameHasOwner` for `org.asuslinux.Daemon` instead of listing every bus name.
+- **File:** `hwDetect.js` — `detectAuraDaemon()`
+- **Description:** `_syncAura()` ran on each timer tick and called system `ListNames`, which is heavyweight for a periodic check.
+- **Repro:** dbus-monitor / profiling during Scheduled mode with Aura optional path enabled.
+
+### README claimed test override auto-restores at next tick
+- **Author:** Cursor Agent
+- **Date found:** 2026-07-15
+- **Status:** Fixed
+- **Date fixed:** 2026-07-15
+- **Priority:** Should / Medium
+- **Fix:** README panel mockup and bullet now match code: override lasts until **Resume Schedule Now** or a mode switch (menu string was already correct).
+- **File:** `README.md`
+- **Description:** Docs said the scheduler restores brightness on the next tick, but `_testOverride` makes the timer skip `_applyNow()` until Resume/mode change.
+- **Repro:** Compare README “auto-restores” wording with panel test-override behaviour.
+
+### Panel menu async `_refresh` can resume after destroy
+- **Author:** Cursor Agent
+- **Date found:** 2026-07-15
+- **Status:** Fixed
+- **Date fixed:** 2026-07-15
+- **Priority:** Should / Medium
+- **Fix:** `KbdIndicator` sets `_destroyed` in `destroy()`; `_refresh()` returns early before and after `await describeHardware()` if destroyed or extension disabled.
+- **File:** `extension.js` — `KbdIndicator`
+- **Description:** Opening the menu awaited hardware description; if the extension was disabled mid-await, the continuation could touch destroyed widgets.
+- **Repro:** Open panel menu then quickly disable the extension before HW describe completes.
+
+### Custom panel buttons lacked accessible state / used hard-coded colours
+- **Author:** Cursor Agent
+- **Date found:** 2026-07-15
+- **Status:** Fixed
+- **Date fixed:** 2026-07-15
+- **Priority:** Should (a11y) / Medium
+- **Fix:** Test/mode `St.Button`s use `toggle_mode`, `checked`, `can_focus`, and `accessible_name`; active/warn labels use stylesheet classes instead of inline RGBA; added `stylesheet.css` to install/pack.
+- **Files:** `extension.js`, `stylesheet.css`, `scripts/install.sh`, `tools/ci-verify.sh`
+- **Description:** Guide accessibility guidance prefers proper widget state (e.g. checked) over painting selection with inline colours only.
+- **Repro:** Inspect panel test/mode buttons with an accessibility tree / high-contrast theme.
+
+### Sync GSD `call_sync` on enable and brightness writes
+- **Author:** Cursor Agent
+- **Date found:** 2026-07-15
+- **Status:** Open
+- **Priority:** Should (polish) / Midlow
+- **File:** `extension.js` — `gsdGet()`, `gsdSetBrightness()`
+- **Description:** Keyboard Steps/Brightness still use synchronous session D-Bus calls. Acceptable when rare (enable + level changes); `_writeBrightness()` already skips unchanged levels. Full async GSD would further reduce freeze risk if GSD hangs.
+- **Repro:** N/A — known pattern; only problematic if GSD stops responding.
+
+### No gettext / translations
+- **Author:** Cursor Agent
+- **Date found:** 2026-07-15
+- **Status:** Open
+- **Priority:** Should (audience) / Low for EGO · Medium for i18n
+- **Files:** `metadata.json`, `extension.js`, `prefs.js`
+- **Description:** Guide Translations page: add `gettext-domain`, wrap UI strings with `_()` / `ngettext`, ship `po/` and pack with `--podir`. Not required for EGO approval; all UI is English-only today.
+- **Repro:** N/A — feature gap.
+
+### metadata.json ships integer `"version"` (EGO-owned field)
+- **Author:** Cursor Agent
+- **Date found:** 2026-07-15
+- **Status:** Deferred
+- **Priority:** Nice / Low
+- **File:** `metadata.json`
+- **Description:** Anatomy docs say developers should not set `version` (EGO overrides it). We keep it for local install/CI/`gnome-extensions info` sync with `version-name`.
+- **Repro:** N/A — intentional project convention.
+
+### Prefer versioned GTK imports in prefs (done) / optional stylesheet (done)
+- **Author:** Cursor Agent
+- **Date found:** 2026-07-15
+- **Status:** Fixed
+- **Date fixed:** 2026-07-15
+- **Priority:** Nice
+- **Fix:** `prefs.js` imports `Gtk`/`Gdk`/`Adw`/`GObject` with explicit versions; `stylesheet.css` added for panel emphasis.
+- **Files:** `prefs.js`, `stylesheet.css`
+
+### Schedule logic duplicated between shell and prefs modules
+- **Author:** Cursor Agent
+- **Date found:** 2026-07-15
+- **Status:** Open
+- **Priority:** Nice / Low
+- **Files:** `extension.js`, `scheduleLogic.js`
+- **Description:** Period active/next-change helpers live in `extension.js` while prefs tests use `scheduleLogic.js`. Could import shared helpers in the Shell module (already packed).
+- **Repro:** N/A — maintainability.
+
+### Schedules stored as JSON string instead of structured GVariant
+- **Author:** Cursor Agent
+- **Date found:** 2026-07-15
+- **Status:** Open
+- **Priority:** Nice / Low
+- **File:** `schemas/…gschema.xml` key `schedules`
+- **Description:** Guide tip for complex settings prefers richer GVariant types; JSON-in-string works but is harder to validate/migrate.
+- **Repro:** N/A — design choice.

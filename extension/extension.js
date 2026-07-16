@@ -18,6 +18,8 @@ import {
     describeHardware,
 } from './hwDetect.js';
 
+Gio._promisify(Gio.Subprocess.prototype, 'communicate_utf8_async', 'communicate_utf8_finish');
+
 // ── GSD keyboard brightness D-Bus helpers ──────────────────────────────────
 // Uses the same service GNOME's own brightness slider calls.
 // Direct session-bus calls mirror exactly what the working gdbus commands do.
@@ -139,10 +141,12 @@ class KbdIndicator extends PanelMenu.Button {
     _init(ext) {
         super._init(0.0, 'Keyboard Backlight');
         this._ext = ext;
+        this._destroyed = false;
 
         this._icon = new St.Icon({
             icon_name: 'input-keyboard-symbolic',
             style_class: 'system-status-icon',
+            accessible_name: 'Keyboard backlight',
         });
         this.add_child(this._icon);
 
@@ -153,6 +157,7 @@ class KbdIndicator extends PanelMenu.Button {
     }
 
     destroy() {
+        this._destroyed = true;
         if (this._menuOpenId) {
             this.menu.disconnect(this._menuOpenId);
             this._menuOpenId = null;
@@ -207,6 +212,9 @@ class KbdIndicator extends PanelMenu.Button {
                 style_class: 'button',
                 style: 'min-width: 48px; padding: 4px 8px;',
                 reactive: true,
+                can_focus: true,
+                toggle_mode: true,
+                accessible_name: i === 0 ? 'Test brightness Off' : `Test brightness level ${i}`,
             });
             const level = i;
             btn.connect('clicked', () => {
@@ -249,6 +257,9 @@ class KbdIndicator extends PanelMenu.Button {
                 style_class: 'button',
                 style: 'padding: 4px 8px;',
                 reactive: true,
+                can_focus: true,
+                toggle_mode: true,
+                accessible_name: `Backlight mode ${label}`,
             });
             btn.connect('clicked', () => {
                 this._ext._testOverride = false;
@@ -275,7 +286,13 @@ class KbdIndicator extends PanelMenu.Button {
     }
 
     async _refresh() {
+        if (this._destroyed)
+            return;
+
         const ext     = this._ext;
+        if (!ext?._settings || !ext._enabled)
+            return;
+
         const mode    = ext._settings.get_string('mode');
         const maxB    = ext._maxBrightness;
         const current = ext._currentBrightness;
@@ -311,6 +328,9 @@ class KbdIndicator extends PanelMenu.Button {
             gsdSteps:      ext._gsdSteps,
             maxBrightness: maxB,
         });
+        if (this._destroyed || !ext._enabled)
+            return;
+
         this._hwItem.label.text = hw.kbdBackend;
         this._hwItem.visible    = true;
 
@@ -320,7 +340,7 @@ class KbdIndicator extends PanelMenu.Button {
 
         if (schedErr) {
             const warn = new PopupMenu.PopupMenuItem('⚠  Schedule data is invalid', {reactive: false});
-            warn.label.style = 'color: rgba(255, 120, 80, 1);';
+            warn.label.add_style_class_name('kbd-backlight-warn');
             this._schedSection.addMenuItem(warn);
         } else if (schedules.length === 0) {
             const empty = new PopupMenu.PopupMenuItem('(none — add periods in Settings)', {reactive: false});
@@ -334,39 +354,39 @@ class KbdIndicator extends PanelMenu.Button {
                     {reactive: false}
                 );
                 if (active)
-                    item.label.style = 'color: rgba(255, 210, 80, 1); font-weight: bold;';
+                    item.label.add_style_class_name('kbd-backlight-active');
                 this._schedSection.addMenuItem(item);
             }
         }
 
         this._testBtns.forEach((btn, i) => {
-            btn.style = i === current
-                ? 'min-width:48px; padding:4px 8px; background-color:rgba(255,255,255,0.25); border-radius:4px;'
-                : 'min-width:48px; padding:4px 8px;';
+            btn.checked = i === current;
         });
 
-        for (const [id, btn] of Object.entries(this._modeBtns)) {
-            btn.style = id === mode
-                ? 'padding:4px 8px; background-color:rgba(255,255,255,0.25); border-radius:4px;'
-                : 'padding:4px 8px;';
-        }
+        for (const [id, btn] of Object.entries(this._modeBtns))
+            btn.checked = id === mode;
     }
 });
 
 // ── Extension ──────────────────────────────────────────────────────────────
 
 export default class KbdBacklightScheduler extends Extension {
-    async enable() {
+    enable() {
+        this._enabled = true;
         this._settings = this.getSettings();
 
         this._testOverride  = false;
         this._auraError     = null;
         this._gsdOk         = false;
         this._gsdSteps      = 0;
-        await this._syncHardware();
+        this._asusctlProbed = false;
+        this._lastAuraKey   = null;
+        // Modern asusctl defaults; refined asynchronously after enable() returns.
+        this._asusctlStyle   = 'v6';
+        this._auraColourFlag = '--colour';
+
+        this._syncHardware();
         this._syncAura();
-        this._asusctlStyle   = detectAsusctlCliStyle();
-        this._auraColourFlag = this._auraAvailable ? detectAsusctlColourFlag() : '--colour';
 
         // Read Steps directly from GSD (Steps=4 → levels 0‥3, maxBrightness=3).
         // Falls back to the stored setting if GSD isn't reachable yet.
@@ -397,6 +417,12 @@ export default class KbdBacklightScheduler extends Extension {
     }
 
     disable() {
+        this._enabled = false;
+
+        if (this._probeAsusctlIdleId) {
+            GLib.source_remove(this._probeAsusctlIdleId);
+            this._probeAsusctlIdleId = null;
+        }
         if (this._timerId) {
             GLib.source_remove(this._timerId);
             this._timerId = null;
@@ -408,10 +434,11 @@ export default class KbdBacklightScheduler extends Extension {
         this._indicator?.destroy();
         this._indicator = null;
         this._settings  = null;
+        this._lastAuraKey = null;
     }
 
-    async _syncHardware() {
-        const asusLed = await detectAsusKbdLed();
+    _syncHardware() {
+        const asusLed = detectAsusKbdLed();
         const asusWmi = detectAsusNbWmi();
         this._settings.set_boolean('asus-kbd-detected', asusLed || asusWmi);
     }
@@ -422,9 +449,31 @@ export default class KbdBacklightScheduler extends Extension {
         if (firstRun || available !== this._auraAvailable) {
             this._auraAvailable = available;
             this._settings.set_boolean('aura-available', available);
-            if (available)
-                this._auraColourFlag = detectAsusctlColourFlag();
-            this._asusctlStyle = detectAsusctlCliStyle();
+            if (available && this._enabled && !this._asusctlProbed && !this._probeAsusctlIdleId) {
+                this._probeAsusctlIdleId = GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE, () => {
+                    this._probeAsusctlIdleId = null;
+                    this._probeAsusctlCli();
+                    return GLib.SOURCE_REMOVE;
+                });
+            }
+        }
+    }
+
+    async _probeAsusctlCli() {
+        if (!this._enabled || this._asusctlProbed)
+            return;
+        this._asusctlProbed = true;
+        try {
+            const [style, flag] = await Promise.all([
+                detectAsusctlCliStyle(),
+                detectAsusctlColourFlag(),
+            ]);
+            if (!this._enabled)
+                return;
+            this._asusctlStyle = style;
+            this._auraColourFlag = flag;
+        } catch (_) {
+            // Keep modern defaults if probing fails.
         }
     }
 
@@ -454,6 +503,8 @@ export default class KbdBacklightScheduler extends Extension {
     }
 
     _applyNow(force = false) {
+        if (!this._enabled || !this._settings)
+            return;
         if (this._testOverride && !force)
             return;
 
@@ -492,27 +543,48 @@ export default class KbdBacklightScheduler extends Extension {
         this._indicator?._refresh();
     }
 
+    _auraFailed(message) {
+        this._auraError = message;
+        this._lastAuraKey = null;
+        console.error(`[KbdBacklight] asusctl failed: ${message}`);
+        this._indicator?._refresh();
+    }
+
     _auraApply(auraMode, hexColor) {
+        if (!this._enabled)
+            return;
         const hex  = (hexColor ?? '#ffffff').replace('#', '');
+        const key  = `${auraMode}|${hex}|${this._asusctlStyle}|${this._auraColourFlag}`;
+        if (key === this._lastAuraKey)
+            return;
+
         const argv = buildAuraArgv(
             auraMode, hex, this._asusctlStyle ?? 'v6', this._auraColourFlag ?? '--colour'
         );
         try {
-            const proc = Gio.Subprocess.new(argv, Gio.SubprocessFlags.STDERR_PIPE);
-            proc.wait_async(null, (p, result) => {
+            const proc = Gio.Subprocess.new(
+                argv,
+                Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_PIPE
+            );
+            // Mark intent before spawn so a timer tick during flight does not double-spawn.
+            this._lastAuraKey = key;
+            proc.communicate_utf8_async(null, null, (p, result) => {
+                if (!this._enabled)
+                    return;
                 try {
-                    p.wait_finish(result);
-                    this._auraError = null;
+                    const [, , stderr] = p.communicate_utf8_finish(result);
+                    if (p.get_if_exited() && p.get_exit_status() === 0) {
+                        this._auraError = null;
+                        this._indicator?._refresh();
+                    } else {
+                        this._auraFailed(stderr?.trim() || `asusctl exited ${p.get_exit_status()}`);
+                    }
                 } catch (e) {
-                    const [, stderr] = p.communicate_utf8(null, null);
-                    this._auraError = (stderr?.trim() || e.message);
+                    this._auraFailed(e.message);
                 }
-                this._indicator?._refresh();
             });
         } catch (e) {
-            this._auraError = e.message;
-            console.error(`[KbdBacklight] asusctl failed: ${e.message}`);
-            this._indicator?._refresh();
+            this._auraFailed(e.message);
         }
     }
 

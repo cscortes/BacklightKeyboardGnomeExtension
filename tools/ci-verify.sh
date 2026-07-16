@@ -184,7 +184,7 @@ else
         cd extension
         zip -q -r "../$ZIP" \
             metadata.json extension.js prefs.js \
-            hwDetect.js scheduleLogic.js \
+            hwDetect.js scheduleLogic.js stylesheet.css \
             schemas/org.gnome.shell.extensions.kbd-backlight-scheduler.gschema.xml
     )
     (
@@ -205,6 +205,7 @@ need_top=(
     prefs.js
     hwDetect.js
     scheduleLogic.js
+    stylesheet.css
     LICENSE
     schemas/org.gnome.shell.extensions.kbd-backlight-scheduler.gschema.xml
 )

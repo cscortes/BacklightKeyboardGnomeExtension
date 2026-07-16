@@ -45,6 +45,7 @@ cp "$EXT_SRC/extension.js"  "$EXT_DIR/"
 cp "$EXT_SRC/prefs.js"      "$EXT_DIR/"
 cp "$EXT_SRC/hwDetect.js"   "$EXT_DIR/"
 cp "$EXT_SRC/scheduleLogic.js" "$EXT_DIR/"
+cp "$EXT_SRC/stylesheet.css" "$EXT_DIR/"
 cp "$SCHEMA_SRC/"*.xml             "$EXT_DIR/schemas/"
 cp "$SCHEMA_SRC/gschemas.compiled" "$EXT_DIR/schemas/"
 echo "      OK"
@@ -62,6 +63,7 @@ REQUIRED_FILES=(
     prefs.js
     hwDetect.js
     scheduleLogic.js
+    stylesheet.css
     schemas/gschemas.compiled
     schemas/org.gnome.shell.extensions.kbd-backlight-scheduler.gschema.xml
 )
