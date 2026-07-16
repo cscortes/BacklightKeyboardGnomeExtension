@@ -21,7 +21,7 @@ dev-setup:
 	npm install --no-fund --no-audit
 	chmod +x scripts/install.sh scripts/validate-js.sh scripts/dev-reload.sh \
 		tools/prefs-smoke.js tools/check-syntax.js tools/schedule-logic-test.js \
-		tools/dev-devkit.js tools/ci-verify.sh
+		tools/dev-devkit.js tools/ci-verify.sh tools/ego-hygiene-test.py
 
 validate:
 	./scripts/validate-js.sh

@@ -152,7 +152,9 @@ if errors:
         print(f"  - {e}", file=sys.stderr)
     sys.exit(1)
 PY
-ok "hygiene checks"
+ok "import / deprecated-API hygiene"
+python3 "$ROOT/tools/ego-hygiene-test.py" || fail "EGO hygiene tests failed"
+ok "EGO review-regression hygiene"
 
 if [[ "$SKIP_PACK" -eq 1 ]]; then
     echo "[4/5] pack… skipped"

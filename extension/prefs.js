@@ -44,7 +44,6 @@ function loadSchedules(settings) {
             return {schedules: [], error: 'schedules must be a JSON array'};
         return {schedules: parsed, error: null};
     } catch (e) {
-        console.warn(`[KbdBacklight] Invalid schedules JSON: ${e.message}`);
         return {schedules: [], error: e.message};
     }
 }
@@ -378,6 +377,13 @@ export default class KbdBacklightPreferences extends ExtensionPreferences {
         });
 
         window.set_default_size(640, 620);
+        window.connect('close-request', () => {
+            this._scheduleRows = null;
+            this._overlapBanner = null;
+            this._addBtn = null;
+            this._scheduleJsonError = null;
+            return false;
+        });
 
         // ══════════════════════════════════════════════════════
         //  Page 1 – General

@@ -12,8 +12,6 @@ import {
     detectAsusKbdLed,
     detectAsusNbWmi,
     detectAuraAvailable,
-    detectAuraDaemon,
-    detectAsusctlBinary,
     detectAsusctlColourFlag,
     detectAsusctlCliStyle,
     buildAuraArgv,
@@ -149,9 +147,17 @@ class KbdIndicator extends PanelMenu.Button {
         this.add_child(this._icon);
 
         this._buildMenu();
-        this.menu.connect('open-state-changed', (_m, open) => {
+        this._menuOpenId = this.menu.connect('open-state-changed', (_m, open) => {
             if (open) this._refresh();
         });
+    }
+
+    destroy() {
+        if (this._menuOpenId) {
+            this.menu.disconnect(this._menuOpenId);
+            this._menuOpenId = null;
+        }
+        super.destroy();
     }
 
     _buildMenu() {
@@ -353,9 +359,6 @@ export default class KbdBacklightScheduler extends Extension {
     async enable() {
         this._settings = this.getSettings();
 
-        const ver = this.metadata['version-name'] ?? '?';
-        console.log(`[KbdBacklight] v${ver} enabled`);
-
         this._testOverride  = false;
         this._auraError     = null;
         this._gsdOk         = false;
@@ -372,7 +375,6 @@ export default class KbdBacklightScheduler extends Extension {
             this._gsdSteps      = steps;
             this._gsdOk         = true;
             this._maxBrightness = Math.max(0, steps - 1);
-            console.log(`[KbdBacklight] GSD Steps=${steps}, maxBrightness=${this._maxBrightness}`);
         } catch (e) {
             this._maxBrightness = this._settings.get_int('max-brightness');
             this._gsdSteps      = this._maxBrightness + 1;
@@ -411,10 +413,7 @@ export default class KbdBacklightScheduler extends Extension {
     async _syncHardware() {
         const asusLed = await detectAsusKbdLed();
         const asusWmi = detectAsusNbWmi();
-        const detected = asusLed || asusWmi;
-        this._settings.set_boolean('asus-kbd-detected', detected);
-        console.log(`[KbdBacklight] ASUS WMI LED (asus::kbd_backlight): ${asusLed}`);
-        console.log(`[KbdBacklight] ASUS platform (asus-nb-wmi): ${asusWmi}`);
+        this._settings.set_boolean('asus-kbd-detected', asusLed || asusWmi);
     }
 
     _syncAura() {
@@ -426,8 +425,6 @@ export default class KbdBacklightScheduler extends Extension {
             if (available)
                 this._auraColourFlag = detectAsusctlColourFlag();
             this._asusctlStyle = detectAsusctlCliStyle();
-            console.log(`[KbdBacklight] Aura RGB: ${available} ` +
-                `(daemon=${detectAuraDaemon()}, asusctl=${detectAsusctlBinary()})`);
         }
     }
 
@@ -451,7 +448,6 @@ export default class KbdBacklightScheduler extends Extension {
             const pct = levelToPct(clamped, this._maxBrightness);
             gsdSetBrightness(pct);
             this._currentBrightness = clamped;
-            console.log(`[KbdBacklight] Set level ${clamped} (${pct}%) via GSD`);
         } catch (e) {
             console.error(`[KbdBacklight] SetBrightness failed: ${e.message}`);
         }
@@ -510,11 +506,9 @@ export default class KbdBacklightScheduler extends Extension {
                 } catch (e) {
                     const [, stderr] = p.communicate_utf8(null, null);
                     this._auraError = (stderr?.trim() || e.message);
-                    console.error(`[KbdBacklight] asusctl failed: ${this._auraError}`);
                 }
                 this._indicator?._refresh();
             });
-            console.log(`[KbdBacklight] Aura ${auraMode} #${hex} (${argv.join(' ')})`);
         } catch (e) {
             this._auraError = e.message;
             console.error(`[KbdBacklight] asusctl failed: ${e.message}`);

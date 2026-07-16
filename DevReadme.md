@@ -19,7 +19,7 @@ Installs `glib2-devel`, `nodejs`, `npm`, `gjs`, and `mutter-devkit` via `dnf`, t
 
 ```bash
 npm install          # first time only — installs eslint
-./scripts/validate-js.sh     # ESLint + syntax check + schedule logic tests + prefs smoke test
+./scripts/validate-js.sh     # ESLint + syntax + schedule tests + EGO hygiene + prefs smoke
 ```
 
 `scripts/validate-js.sh` runs before every install (`scripts/install.sh` calls it as step 1):
@@ -29,6 +29,7 @@ npm install          # first time only — installs eslint
 | ESLint | Node.js | Duplicate `const`, unreachable code, common logic errors |
 | gjs syntax | `gjs -c` | SyntaxErrors without loading GTK |
 | schedule logic tests | `gjs` | Regressions in overlap detection / save planning (`extension/scheduleLogic.js`) |
+| EGO hygiene | `python3` | Logging limits, signal disconnect, prefs `close-request` cleanup, metadata / async sysfs (`tools/ego-hygiene-test.py`) |
 | prefs smoke | `gjs` + real Gtk/Adw | Wrong widget properties, invalid parenting, `fillPreferencesWindow` crashes |
 
 GitHub Actions runs the same checks on every push/PR via `.github/workflows/verify.yml`, then
