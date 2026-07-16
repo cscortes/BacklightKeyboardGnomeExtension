@@ -4,7 +4,7 @@ export class ExtensionPreferences {
         this.metadata = null;
     }
 
-    getSettings(_schemaId) {
+    getSettings() {
         throw new Error('getSettings must be assigned on the smoke-test instance');
     }
 }

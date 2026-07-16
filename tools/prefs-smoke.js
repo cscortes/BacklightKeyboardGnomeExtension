@@ -71,7 +71,7 @@ async function main() {
     });
 
     const win = new Adw.PreferencesWindow({title: 'Smoke test'});
-    prefs.fillPreferencesWindow(win);
+    await prefs.fillPreferencesWindow(win);
 
     print('prefs smoke test OK');
 }

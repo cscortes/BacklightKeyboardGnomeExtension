@@ -3,7 +3,7 @@
 A GNOME Shell extension that automatically controls keyboard backlight brightness on a time-of-day schedule.
 
 Tested on Fedora 44 with an ASUS laptop, GNOME Shell 50.2. Compatible with GNOME 45–50.
-Version: **0.5.2** · License: **GPL-2.0-or-later**
+Version: **0.5.3** · License: **GPL-2.0-or-later**
 
 > Contributing or modifying the code? See **[DevReadme.md](DevReadme.md)** instead.
 

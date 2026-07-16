@@ -86,8 +86,8 @@ older integer build (common on Wayland until you log out/in).
 
 | Location | Shows |
 |---|---|
-| Settings → About | `semantic-version` (e.g. `v0.5.2`) |
-| Panel menu footer | `semantic-version` |
+| Settings → About | `version-name` (e.g. `v0.5.2`) |
+| Panel menu footer | `version-name` |
 | `gnome-extensions info …` | integer `version` (e.g. `17`) |
 | `scripts/install.sh` output | both, after validation |
 
@@ -142,13 +142,13 @@ runs.
 | Field | Example | Purpose |
 |---|---|---|
 | `"version"` | `17` | **GNOME integer version** — required by GNOME Shell, Extension Manager, and `extensions.gnome.org`. Must increase on every installable build (1, 2, 3 …). |
-| `"semantic-version"` | `"0.5.2"` | **Human-readable semver** — shown in the panel menu, Settings → About, `scripts/install.sh` output, and README.md. |
+| `"version-name"` | `"0.5.2"` | **Human-readable semver** — shown in the panel menu, Settings → About, `scripts/install.sh` output, and README.md. |
 
 GNOME only understands the integer. The semver string is a project convention for readable release labels.
 
 **Bump rules**
 
-| Change type | `semantic-version` | `"version"` |
+| Change type | `version-name` | `"version"` |
 |---|---|---|
 | Bug fix | patch — e.g. `0.5.2` → `0.5.3` | increment by 1 |
 | New feature | minor — e.g. `0.5.2` → `0.6.0` | increment by 1 |
@@ -156,7 +156,7 @@ GNOME only understands the integer. The semver string is a project convention fo
 
 **What to update when releasing**
 
-1. **`extension/metadata.json`** — both `"version"` and `"semantic-version"` (source of truth)
+1. **`extension/metadata.json`** — both `"version"` and `"version-name"` (source of truth)
 2. **`README.md`** — `Version:` line near the top (keep in sync for readers who don't open metadata)
 3. **`docs/buglist.md`** — optional; note fix/feature version in entries when helpful
 
@@ -167,7 +167,7 @@ Everything else reads from `extension/metadata.json` at runtime or install time 
 After the version bump is committed on `master`:
 
 ```bash
-git tag v0.5.2          # must match metadata "semantic-version" with a leading v
+git tag v0.5.2          # must match metadata "version-name" with a leading v
 git push origin v0.5.2
 ```
 
@@ -179,7 +179,7 @@ That triggers `.github/workflows/release.yml` with these rules:
 | Verification or pack checks fail | **Error** — no zip published as a Release |
 | New version **and** checks pass | Public Release on the repo **Releases** page with the zip attached |
 
-The tag and `semantic-version` must match or the workflow fails. Manual **workflow_dispatch**
+The tag and `version-name` must match or the workflow fails. Manual **workflow_dispatch**
 runs the same duplicate-version + verify gates and packs a candidate artifact, but does
 **not** publish a Release — push a `v*.*.*` tag for that.
 
@@ -342,7 +342,7 @@ GnomeExtension/
 ├── package.json         npm scripts + ESLint (Node.js)
 ├── eslint.config.js
 ├── extension/           ← installable extension (gnome-extensions pack root)
-│   ├── metadata.json    UUID, integer version (GNOME), semantic-version (display)
+│   ├── metadata.json    UUID, integer version (GNOME), version-name (display)
 │   ├── extension.js     Panel indicator + scheduling engine
 │   ├── prefs.js         Settings UI (General, Schedule, and About tabs)
 │   ├── hwDetect.js      ASUS WMI / Aura hardware detection

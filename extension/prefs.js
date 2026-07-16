@@ -361,19 +361,17 @@ const ScheduleRow = GObject.registerClass({
 // ── Preferences window ──────────────────────────────────────────────────────
 
 export default class KbdBacklightPreferences extends ExtensionPreferences {
-    fillPreferencesWindow(window) {
-        const settings = this.getSettings(
-            'org.gnome.shell.extensions.kbd-backlight-scheduler'
-        );
+    async fillPreferencesWindow(window) {
+        const settings = this.getSettings();
 
         // Re-detect hardware when Settings opens (may differ from last extension enable).
-        const asusKbd       = detectAsusKbdLed() || detectAsusNbWmi();
+        const asusKbd       = (await detectAsusKbdLed()) || detectAsusNbWmi();
         const auraAvailable = detectAuraAvailable();
         settings.set_boolean('asus-kbd-detected', asusKbd);
         settings.set_boolean('aura-available', auraAvailable);
 
         const maxB = settings.get_int('max-brightness');
-        const hw   = describeHardware({
+        const hw   = await describeHardware({
             gsdOk:         maxB >= 0,
             gsdSteps:      maxB + 1,
             maxBrightness: maxB,
@@ -530,7 +528,7 @@ export default class KbdBacklightPreferences extends ExtensionPreferences {
         const aboutGroup = new Adw.PreferencesGroup({title: 'Extension'});
         aboutPage.add(aboutGroup);
 
-        const version = this.metadata['semantic-version'] ?? '—';
+        const version = this.metadata['version-name'] ?? '—';
         const versionRow = new Adw.ActionRow({
             title: 'Version',
             subtitle: `Keyboard Backlight Scheduler  v${version}`,

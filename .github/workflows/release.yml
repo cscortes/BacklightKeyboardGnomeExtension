@@ -6,8 +6,8 @@
 #   3. Only after a new version + passing verify → pack and create a public Release
 #      (visible under the repo's Releases page).
 #
-# Tag must match metadata.json "semantic-version" with a leading v:
-#   semantic-version "0.5.1"  →  git tag v0.5.1 && git push origin v0.5.1
+# Tag must match metadata.json "version-name" with a leading v:
+#   version-name "0.5.1"  →  git tag v0.5.1 && git push origin v0.5.1
 #
 # Host is ubuntu-latest; the job runs in a Fedora 44 container (same Adw/Gtk stack as
 # development — Ubuntu 24.04's libadwaita is too old for PreferencesPage.set_banner).
@@ -72,7 +72,7 @@ jobs:
         id: ver
         run: |
           set -euo pipefail
-          SEMVER="$(python3 -c 'import json; print(json.load(open("extension/metadata.json"))["semantic-version"])')"
+          SEMVER="$(python3 -c 'import json; print(json.load(open("extension/metadata.json"))["version-name"])')"
           BUILD="$(python3 -c 'import json; print(json.load(open("extension/metadata.json"))["version"])')"
           UUID="$(python3 -c 'import json; print(json.load(open("extension/metadata.json"))["uuid"])')"
           EXPECTED_TAG="v${SEMVER}"
@@ -80,7 +80,7 @@ jobs:
           if [[ "${{ github.ref_type }}" == "tag" ]]; then
             TAG="${{ github.ref_name }}"
             if [[ "$TAG" != "$EXPECTED_TAG" ]]; then
-              echo "::error::Tag '$TAG' does not match metadata semantic-version '$SEMVER' (expected '$EXPECTED_TAG'). Bump metadata.json + README, commit, then retag. No release bundle will be created."
+              echo "::error::Tag '$TAG' does not match metadata version-name '$SEMVER' (expected '$EXPECTED_TAG'). Bump metadata.json + README, commit, then retag. No release bundle will be created."
               exit 1
             fi
             PUBLISH=true
@@ -111,7 +111,7 @@ jobs:
 
           if gh release view "$TAG" --repo "$GH_REPO" >/dev/null 2>&1; then
             URL="$(gh release view "$TAG" --repo "$GH_REPO" --json url -q .url)"
-            echo "::error::Version $TAG (semantic-version $SEMVER, GNOME build $BUILD) already has a GitHub Release. Bump both version fields in metadata.json (and README), commit, and tag the new version. No release bundle will be created."
+            echo "::error::Version $TAG (version-name $SEMVER, GNOME build $BUILD) already has a GitHub Release. Bump both version fields in metadata.json (and README), commit, and tag the new version. No release bundle will be created."
             echo "Existing release: $URL"
             exit 1
           fi
@@ -119,7 +119,7 @@ jobs:
           if gh release list --repo "$GH_REPO" --limit 100 --json tagName,name \
             --jq ".[] | select(.tagName == \"$TAG\" or .tagName == \"$SEMVER\" or .name == \"$TAG\" or .name == \"$SEMVER\" or .name == \"v$SEMVER\") | .tagName" \
             | grep -q .; then
-            echo "::error::A GitHub Release for semantic-version $SEMVER already exists. Bump semantic-version (and integer version) before releasing again. No release bundle will be created."
+            echo "::error::A GitHub Release for version-name $SEMVER already exists. Bump version-name (and integer version) before releasing again. No release bundle will be created."
             exit 1
           fi
 
@@ -178,7 +178,7 @@ jobs:
           NOTES=$(cat <<EOF
           ## Keyboard Backlight Scheduler ${TAG}
 
-          - **semantic-version:** \`${SEMVER}\`
+          - **version-name:** \`${SEMVER}\`
           - **GNOME build (\`metadata.json\` \`version\`):** \`${BUILD}\`
 
           ### Install
@@ -206,6 +206,6 @@ jobs:
           echo "### Release published" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "- **Tag:** \`$TAG\`" >> "$GITHUB_STEP_SUMMARY"
-          echo "- **semantic-version:** \`$SEMVER\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **version-name:** \`$SEMVER\`" >> "$GITHUB_STEP_SUMMARY"
           echo "- **GNOME build:** \`$BUILD\`" >> "$GITHUB_STEP_SUMMARY"
           echo "- **URL:** $URL" >> "$GITHUB_STEP_SUMMARY"

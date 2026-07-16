@@ -49,7 +49,7 @@ def req(key):
     if key not in meta or meta[key] in ("", None, []):
         errors.append(f"missing or empty required key: {key}")
 
-for key in ("uuid", "name", "description", "shell-version", "url"):
+for key in ("uuid", "name", "description", "shell-version", "url", "settings-schema"):
     req(key)
 
 uuid = meta.get("uuid", "")
@@ -62,9 +62,9 @@ ver = meta.get("version")
 if not isinstance(ver, int) or isinstance(ver, bool) or ver < 1:
     errors.append(f'version must be a positive integer (not semver), got: {ver!r}')
 
-sem = meta.get("semantic-version")
+sem = meta.get("version-name")
 if not isinstance(sem, str) or not re.fullmatch(r"\d+\.\d+\.\d+", sem):
-    errors.append(f'semantic-version must be MAJOR.MINOR.PATCH, got: {sem!r}')
+    errors.append(f'version-name must be MAJOR.MINOR.PATCH, got: {sem!r}')
 
 shell = meta.get("shell-version")
 if not isinstance(shell, list) or not shell or not all(isinstance(s, str) for s in shell):
@@ -79,14 +79,14 @@ m = re.search(r"Version:\s*\*\*([0-9.]+)\*\*", readme)
 if not m:
     errors.append("README.md missing 'Version: **x.y.z**' line")
 elif sem and m.group(1) != sem:
-    errors.append(f"README version {m.group(1)!r} != metadata semantic-version {sem!r}")
+    errors.append(f"README version {m.group(1)!r} != metadata version-name {sem!r}")
 
 if errors:
     for e in errors:
         print(f"  - {e}", file=sys.stderr)
     sys.exit(1)
 
-print(f"      uuid={uuid}  version={ver}  semantic-version={sem}")
+print(f"      uuid={uuid}  version={ver}  version-name={sem}")
 print(f"      shell-version={', '.join(shell)}")
 PY
 ok "metadata + README version sync"

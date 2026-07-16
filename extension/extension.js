@@ -262,13 +262,13 @@ class KbdIndicator extends PanelMenu.Button {
         settingsItem.connect('activate', () => this._ext.openPreferences());
         this.menu.addMenuItem(settingsItem);
 
-        const ver = this._ext.metadata['semantic-version'] ?? '?';
+        const ver = this._ext.metadata['version-name'] ?? '?';
         const versionItem = new PopupMenu.PopupMenuItem(`v${ver}`, {reactive: false});
         versionItem.label.add_style_class_name('dim-label');
         this.menu.addMenuItem(versionItem);
     }
 
-    _refresh() {
+    async _refresh() {
         const ext     = this._ext;
         const mode    = ext._settings.get_string('mode');
         const maxB    = ext._maxBrightness;
@@ -300,7 +300,7 @@ class KbdIndicator extends PanelMenu.Button {
             this._nextItem.visible = false;
         }
 
-        const hw = describeHardware({
+        const hw = await describeHardware({
             gsdOk:         ext._gsdOk,
             gsdSteps:      ext._gsdSteps,
             maxBrightness: maxB,
@@ -350,19 +350,17 @@ class KbdIndicator extends PanelMenu.Button {
 // ── Extension ──────────────────────────────────────────────────────────────
 
 export default class KbdBacklightScheduler extends Extension {
-    enable() {
-        this._settings = this.getSettings(
-            'org.gnome.shell.extensions.kbd-backlight-scheduler'
-        );
+    async enable() {
+        this._settings = this.getSettings();
 
-        const ver = this.metadata['semantic-version'] ?? '?';
+        const ver = this.metadata['version-name'] ?? '?';
         console.log(`[KbdBacklight] v${ver} enabled`);
 
         this._testOverride  = false;
         this._auraError     = null;
         this._gsdOk         = false;
         this._gsdSteps      = 0;
-        this._syncHardware();
+        await this._syncHardware();
         this._syncAura();
         this._asusctlStyle   = detectAsusctlCliStyle();
         this._auraColourFlag = this._auraAvailable ? detectAsusctlColourFlag() : '--colour';
@@ -410,8 +408,8 @@ export default class KbdBacklightScheduler extends Extension {
         this._settings  = null;
     }
 
-    _syncHardware() {
-        const asusLed = detectAsusKbdLed();
+    async _syncHardware() {
+        const asusLed = await detectAsusKbdLed();
         const asusWmi = detectAsusNbWmi();
         const detected = asusLed || asusWmi;
         this._settings.set_boolean('asus-kbd-detected', detected);

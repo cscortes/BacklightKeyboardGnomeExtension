@@ -10,7 +10,7 @@ EXT_SRC="$ROOT/extension"
 SCHEMA_SRC="$EXT_SRC/schemas"
 METADATA="$EXT_SRC/metadata.json"
 UUID="$(grep -Po '(?<="uuid": ")[^"]+' "$METADATA")"
-VERSION="$(grep -Po '(?<="semantic-version": ")[^"]+' "$METADATA")"
+VERSION="$(grep -Po '(?<="version-name": ")[^"]+' "$METADATA")"
 EXT_DIR="$HOME/.local/share/gnome-shell/extensions/$UUID"
 # Older installs used other UUID namespaces; folder name must match metadata.json uuid.
 LEGACY_DIRS=(
@@ -70,7 +70,7 @@ for f in "${REQUIRED_FILES[@]}"; do
 done
 
 INSTALLED_UUID="$(grep -Po '(?<="uuid": ")[^"]+' "$EXT_DIR/metadata.json")"
-INSTALLED_VERSION="$(grep -Po '(?<="semantic-version": ")[^"]+' "$EXT_DIR/metadata.json")"
+INSTALLED_VERSION="$(grep -Po '(?<="version-name": ")[^"]+' "$EXT_DIR/metadata.json")"
 INSTALLED_BUILD="$(grep -Po '(?<="version": )[0-9]+' "$EXT_DIR/metadata.json")"
 DIR_UUID="$(basename "$EXT_DIR")"
 
