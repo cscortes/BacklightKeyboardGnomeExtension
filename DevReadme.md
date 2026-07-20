@@ -54,6 +54,8 @@ There are two deploy paths:
   `~/.local/share/gnome-shell/extensions/kbd-backlight-scheduler@cscortes.github.io/`. GNOME
   Shell only picks up the change on its next restart (log out/in on Wayland, `Alt+F2 → r`
   on X11) — use this before a real restart, e.g. final checks before a release.
+- **`make uninstall`** (or `./scripts/uninstall.sh`) — disables the extension and removes that
+  install directory (plus any legacy UUID folders). Leaves asusctl and GSettings alone.
 - **`make dev`** (or `npm run dev`) — the fast dev loop. GNOME Shell only discovers
   new/changed extension code when its own process starts (directory scan + GJS module
   cache are both process-lifetime), so `make dev` launches a disposable **nested devkit
@@ -339,7 +341,7 @@ GnomeExtension/
 ├── README.md            User install / usage
 ├── DevReadme.md         Developer notes (this file)
 ├── LICENSE
-├── Makefile             Dev targets: dev-setup, validate, install, reload, dev, pack, ci
+├── Makefile             Dev targets: dev-setup, validate, install, uninstall, reload, dev, pack, ci
 ├── package.json         npm scripts + ESLint (Node.js)
 ├── eslint.config.js
 ├── extension/           ← installable extension (gnome-extensions pack root)
@@ -353,6 +355,7 @@ GnomeExtension/
 ├── scripts/
 │   ├── validate-js.sh   Pre-install validation (ESLint + gjs smoke test)
 │   ├── install.sh       Schema compile + install from extension/ (no sudo)
+│   ├── uninstall.sh     Disable + remove ~/.local install (no sudo)
 │   └── dev-reload.sh    install + disable/enable
 ├── tools/
 │   ├── check-syntax.js       gjs parse-check helper

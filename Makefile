@@ -1,7 +1,7 @@
 # Keyboard Backlight Scheduler — development targets
 UUID := $(shell grep -Po '(?<="uuid": ")[^"]+' extension/metadata.json)
 
-.PHONY: help dev-setup validate install reload dev pack ci
+.PHONY: help dev-setup validate install uninstall reload dev pack ci
 
 help:
 	@echo "Keyboard Backlight Scheduler — make targets"
@@ -10,6 +10,7 @@ help:
 	@echo "  make validate    ESLint + syntax check + schedule tests + prefs smoke test"
 	@echo "  make ci          validate + metadata/schema/hygiene + pack zip inspect (GitHub Actions)"
 	@echo "  make install     validate, then deploy to ~/.local/share/gnome-shell/extensions/"
+	@echo "  make uninstall   Disable and remove the extension from ~/.local/share/gnome-shell/extensions/"
 	@echo "  make reload      install + disable/enable extension (prefs.js changes only)"
 	@echo "  make dev         Nested devkit GNOME Shell dev loop — auto reinstall + relaunch on save"
 	@echo "  make pack        Build a .shell-extension.zip in dist/ for gnome-extensions install / extensions.gnome.org"
@@ -19,7 +20,7 @@ help:
 dev-setup:
 	sudo dnf install -y glib2-devel nodejs npm gjs mutter-devkit
 	npm install --no-fund --no-audit
-	chmod +x scripts/install.sh scripts/validate-js.sh scripts/dev-reload.sh \
+	chmod +x scripts/install.sh scripts/uninstall.sh scripts/validate-js.sh scripts/dev-reload.sh \
 		tools/prefs-smoke.js tools/check-syntax.js tools/schedule-logic-test.js \
 		tools/dev-devkit.js tools/ci-verify.sh tools/ego-hygiene-test.py
 
@@ -31,6 +32,9 @@ ci: validate
 
 install:
 	./scripts/install.sh
+
+uninstall:
+	./scripts/uninstall.sh
 
 reload:
 	./scripts/dev-reload.sh

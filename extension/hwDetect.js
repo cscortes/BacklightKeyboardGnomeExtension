@@ -150,7 +150,7 @@ export async function describeHardware({gsdOk, gsdSteps, maxBrightness}) {
     else if (auraBinary)
         auraBackend = 'asusctl found - start org.asuslinux.Daemon for RGB';
     else
-        auraBackend = 'Not installed (optional - white backlight still works via GSD)';
+        auraBackend = 'Not installed — ASUS RGB keyboards need asusctl + asusd to light up';
 
     return {
         asusLed: asusLed || asusWmi,

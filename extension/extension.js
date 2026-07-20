@@ -72,6 +72,30 @@ function pctToLevel(pct, maxBrightness) {
     return best;
 }
 
+/** Fixed Test Override presets — independent of hardware step count.
+ *  Visual labels use a 4-dot bar (Off / ●○○○ / ●●○○ / ●●●○ / ●●●●). */
+const TEST_PRESETS = [
+    {pct: 0},
+    {pct: 25},
+    {pct: 50},
+    {pct: 75},
+    {pct: 100},
+];
+const TEST_PRESET_MAX = TEST_PRESETS.length - 1;
+
+/** Index of the TEST_PRESETS entry nearest to pct (ties → lower index). */
+function nearestTestPresetIndex(pct) {
+    let best = 0, bestDiff = Infinity;
+    for (let i = 0; i < TEST_PRESETS.length; i++) {
+        const diff = Math.abs(TEST_PRESETS[i].pct - pct);
+        if (diff < bestDiff) {
+            bestDiff = diff;
+            best = i;
+        }
+    }
+    return best;
+}
+
 function parseSchedules(json) {
     try {
         const parsed = JSON.parse(json);
@@ -204,27 +228,26 @@ class KbdIndicator extends PanelMenu.Button {
         });
 
         this._testBtns = [];
-        const maxB = this._ext._maxBrightness;
-        for (let i = 0; i <= maxB; i++) {
-            const label = i === 0 ? 'Off' : dotBar(i, maxB);
-            const btn   = new St.Button({
+        TEST_PRESETS.forEach(({pct}, i) => {
+            const label = i === 0 ? 'Off' : dotBar(i, TEST_PRESET_MAX);
+            const accessible = i === 0 ? 'Off' : `${pct}%`;
+            const btn = new St.Button({
                 label,
                 style_class: 'button',
                 style: 'min-width: 48px; padding: 4px 8px;',
                 reactive: true,
                 can_focus: true,
                 toggle_mode: true,
-                accessible_name: i === 0 ? 'Test brightness Off' : `Test brightness level ${i}`,
+                accessible_name: `Test brightness ${accessible}`,
             });
-            const level = i;
             btn.connect('clicked', () => {
                 this._ext._testOverride = true;
-                this._ext._writeBrightness(level);
+                this._ext._writeBrightnessPct(pct);
                 this._refresh();
             });
-            this._testBtns.push(btn);
+            this._testBtns.push({btn, pct});
             testBox.add_child(btn);
-        }
+        });
         testRow.add_child(testBox);
         this.menu.addMenuItem(testRow);
 
@@ -359,8 +382,10 @@ class KbdIndicator extends PanelMenu.Button {
             }
         }
 
-        this._testBtns.forEach((btn, i) => {
-            btn.checked = i === current;
+        const currentPct = levelToPct(current, maxB);
+        const nearest = nearestTestPresetIndex(currentPct);
+        this._testBtns.forEach(({btn}, i) => {
+            btn.checked = i === nearest;
         });
 
         for (const [id, btn] of Object.entries(this._modeBtns))
@@ -497,6 +522,17 @@ export default class KbdBacklightScheduler extends Extension {
             const pct = levelToPct(clamped, this._maxBrightness);
             gsdSetBrightness(pct);
             this._currentBrightness = clamped;
+        } catch (e) {
+            console.error(`[KbdBacklight] SetBrightness failed: ${e.message}`);
+        }
+    }
+
+    /** Write brightness as a GSD percentage (Test Override presets). Always pokes hardware. */
+    _writeBrightnessPct(pct) {
+        const clamped = Math.min(Math.max(0, Math.round(pct)), 100);
+        try {
+            gsdSetBrightness(clamped);
+            this._currentBrightness = pctToLevel(clamped, this._maxBrightness);
         } catch (e) {
             console.error(`[KbdBacklight] SetBrightness failed: ${e.message}`);
         }

@@ -7,15 +7,20 @@ This guide explains how to install **Aura RGB keyboard color control** on Fedora
 
 ## Do you need this?
 
-| Feature | Requires asusctl? | How this extension handles it |
-|---------|-------------------|-------------------------------|
-| White backlight brightness (off / dim / full) | **No** | GSD D-Bus — works out of the box on most ASUS laptops |
+| Feature | Requires asusctl / asusd? | How this extension handles it |
+|---------|---------------------------|-------------------------------|
+| **Visible** keyboard lighting on modern ASUS RGB (ROG / Aura) | **Yes — required** | GSD may report full brightness while keys stay dark until `asusd` is running |
+| Brightness levels once Aura is up | Levels via GSD; Aura via asusctl | Schedule / Test Override + optional per-period color |
 | Per-period **RGB color** (Static, Breathe, Strobe, Rainbow) | **Yes** | Schedule tab → Aura Effect + Color picker |
 
-If you only want scheduled **brightness levels**, you do **not** need asusctl. Run
-`python3 tests/test-detect-hardware.py` to confirm GSD and `asus::kbd_backlight` are working.
+On ROG and other Aura RGB boards, **installing asusctl and starting asusd is the only way
+the keyboard will actually light up.** Run `python3 tests/test-detect-hardware.py` to
+confirm GSD and `asus::kbd_backlight` are present; still install asusctl if keys stay dark.
 
-Install asusctl when you want **colored** keyboard lighting tied to schedule periods.
+The same install steps are summarized in the main [README](../README.md#asus-rog--aura-required-for-visible-lighting).
+
+Install asusctl when you want **visible lighting** and/or **colored** keyboard lighting
+tied to schedule periods.
 
 ---
 
